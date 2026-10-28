@@ -87,7 +87,7 @@ services:
       - --worker-concurrency
       - "1"
       - --model-idle-minutes
-      - "2"
+      - "30"
       # --preload-models  # Preload models in router-managed mineru-kit api-server workers.
       # To aggregate existing mineru-api services instead of starting local workers:
       # --local-gpus none
