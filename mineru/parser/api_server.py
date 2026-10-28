@@ -1295,7 +1295,17 @@ class _JobRecord:
 
 
 class JobStore:
-    def __init__(self, concurrency: int = 1, retention_seconds: int = 86400) -> None:
+    def __init__(
+        self, concurrency: int = 1, retention_seconds: int = 86400, model_idle_minutes: int = 0
+    ) -> None:
+        if model_idle_minutes < 0:
+            raise ValueError("model_idle_minutes must be non-negative")
+        self.model_idle_minutes = model_idle_minutes
+        # All job admissions and idle model shutdowns run on the same event loop.
+        self._model_idle_gate = asyncio.Lock()
+        self._model_last_activity: float | None = None
+        self._model_idle_unloaded = False
+        self._model_idle_disabled = False
         self.retention_seconds = retention_seconds
         self._jobs_created = 0
         self._files_processed = 0
@@ -1340,6 +1350,8 @@ class JobStore:
         if self._closing:
             _raise_api_error(503, error_type="engine_error", code="server_shutting_down", message="Server is shutting down")
         self._completion_events[rec.id] = asyncio.Event()
+        self._model_idle_unloaded = False
+        self._model_last_activity = None  # A queued job also prevents idle shutdown.
 
         async def run_owned() -> None:
             """在整个任务期间传播应用租约，并直到清理完成才释放 job 名额。"""
@@ -1358,6 +1370,7 @@ class JobStore:
         def finished(task: asyncio.Task[None]) -> None:
             """回收句柄并读取异常，覆盖任务首次执行前就被取消的路径。"""
             self._tasks.pop(rec.id, None)
+            self._model_last_activity = time.monotonic()
             rec.finished_at = self._now()
             if rec.file_store is not None:
                 rec.file_store.finalize_outputs(rec.id, int(time.time()))
@@ -1374,6 +1387,53 @@ class JobStore:
         task = asyncio.create_task(run_owned(), name=f"mineru-job-{rec.id}")
         self._tasks[rec.id] = task
         task.add_done_callback(finished)
+
+    async def wait_for_model_unload(self) -> None:
+        """Block admission while an idle VLM shutdown is running.
+
+        Call immediately before creating/starting a job, with no intervening await.
+        """
+        if self.model_idle_minutes:
+            async with self._model_idle_gate:
+                pass
+
+    async def unload_idle_models_once(self) -> bool:
+        """Unload cached VLMs only after all job tasks have fully cleaned up."""
+        if not self.model_idle_minutes or self._model_idle_disabled or self._closing:
+            return False
+        threshold = self.model_idle_minutes * 60
+        last = self._model_last_activity
+        if self._tasks or self._model_idle_unloaded or last is None or time.monotonic() - last < threshold:
+            return False
+        async with self._model_idle_gate:
+            # Recheck after waiting for any other operation holding the gate.
+            last = self._model_last_activity
+            if (
+                self._closing or self._tasks or self._model_idle_unloaded or last is None
+                or time.monotonic() - last < threshold
+            ):
+                return False
+            from ..model.vlm.runtime import shutdown_cached_models
+
+            try:
+                # In a managed api-server worker the VLM cache belongs to this
+                # process. Atomic OCR/Layout/Formula/Table caches remain untouched.
+                await run_sync(shutdown_cached_models)
+            except Exception:
+                # A partially closed GPU engine is not safe to retry on a timer.
+                self._model_idle_disabled = True
+                logger.exception("Idle VLM unload failed; disabling automatic unload until restart")
+                return False
+            self._model_idle_unloaded = True
+            logger.info("Idle VLM cache unloaded after %s minutes without parse jobs", self.model_idle_minutes)
+            return True
+
+    async def model_idle_loop(self) -> None:
+        """Monitor idle time without polling GPU utilization or HTTP activity."""
+        interval = min(60.0, max(1.0, self.model_idle_minutes * 60 / 4))
+        while not self._closing and not self._model_idle_disabled:
+            await asyncio.sleep(interval)
+            await self.unload_idle_models_once()
 
     async def wait_for_terminal(self, job_id: str, timeout: float) -> _JobRecord:
         """只等待完成通知，超时或等待方取消不会传播到后台解析任务。"""
@@ -2231,6 +2291,9 @@ async def submit_parse_job(
         allow_http_source=request.app.state.allow_http_source,
     )
 
+    # The remainder of admission (create + start_task) has no await, so the
+    # idle monitor cannot begin an unload between this gate and task creation.
+    await job_store.wait_for_model_unload()
     if job_store._closing:
         _raise_api_error(503, error_type="engine_error", code="server_shutting_down", message="Server is shutting down")
     rec = job_store.create(body, file_store)
@@ -2565,6 +2628,7 @@ def create_app(
     preload_models: bool = False,
     vlm_config: VlmConfig | None = None,
     retention_seconds: int | None = None,
+    model_idle_minutes: int = 0,
 ) -> FastAPI:
     """Create a FastAPI application implementing the MinerU v1 REST API.
 
@@ -2601,6 +2665,8 @@ def create_app(
         Initialize the VLM client and local Hybrid models at startup. Ignored for Flash.
     vlm_config:
         Complete VLM connection configuration override; defaults to global model.vlm settings.
+    model_idle_minutes:
+        Minutes without parse jobs before cached VLMs are unloaded; 0 disables.
     """
     retention_seconds = resolve_retention_seconds(retention_seconds)
     upload_dir = upload_dir or ""
@@ -2618,6 +2684,8 @@ def create_app(
         raise ValueError("max_inline_bytes must be non-negative")
     if max_url_bytes < 0:
         raise ValueError("max_url_bytes must be non-negative")
+    if model_idle_minutes < 0:
+        raise ValueError("model_idle_minutes must be non-negative")
 
     _tiers = _tiers_for_server_tiers(server_tiers)
     _model_registered_at = int(time.time())
@@ -2651,6 +2719,7 @@ def create_app(
         file_store: FileStore = application.state.file_store
         file_store.claim_directory()
         collection_task: asyncio.Task[None] | None = None
+        model_idle_task: asyncio.Task[None] | None = None
 
         async def collect_loop() -> None:
             """每五分钟扫描，先清理终态元数据，再释放无引用文件。"""
@@ -2687,9 +2756,16 @@ def create_app(
                         _preload_tier,
                         preload_result.engine,
                     )
+            if model_idle_minutes:
+                if _preload_tier is not None:
+                    job_store._model_last_activity = time.monotonic()
+                model_idle_task = asyncio.create_task(job_store.model_idle_loop(), name="mineru-api-model-idle")
             yield
         finally:
             runtime_owner.reset(token)
+            if model_idle_task is not None:
+                model_idle_task.cancel()
+                await asyncio.gather(model_idle_task, return_exceptions=True)
             if collection_task is not None:
                 collection_task.cancel()
                 await asyncio.gather(collection_task, return_exceptions=True)
@@ -2777,7 +2853,9 @@ def create_app(
     application.state.vlm_config = vlm_config
     application.state.model_preload_error = None
     FileStore(_upload_dir, retention_seconds=retention_seconds).install(application.state)
-    JobStore(concurrency=concurrency, retention_seconds=retention_seconds).install(application.state)
+    JobStore(
+        concurrency=concurrency, retention_seconds=retention_seconds, model_idle_minutes=model_idle_minutes
+    ).install(application.state)
     application.add_middleware(GZipMiddleware, minimum_size=1000)
 
     @application.exception_handler(ApiServerError)
@@ -2870,6 +2948,10 @@ def _build_server_log_config(log_level: str) -> dict[str, Any]:
     help="Terminal resource retention in seconds (default: 86400; 0 disables collection)",
 )
 @click.option("--host", default="127.0.0.1", help="Server host")
+@click.option(
+    "--model-idle-minutes", default=0, type=click.IntRange(min=0),
+    help="Unload cached VLM models after this many idle minutes (0 disables)",
+)
 @click.option("--port", default=8000, type=int, help="Server port")
 @click.option(
     "--log-level",
@@ -2988,6 +3070,7 @@ def main(
     vlm_max_concurrency: int | None,
     log_level: str | None,
     retention_seconds: int | None = None,
+    model_idle_minutes: int = 0,
 ) -> None:
     """合并显式 VLM 参数后启动 MinerU v1 REST API 服务，不修改全局配置。"""
     configure_standard_streams()
@@ -3041,6 +3124,7 @@ def main(
             preload_models=preload_models,
             vlm_config=vlm_settings,
             retention_seconds=retention_seconds,
+            model_idle_minutes=model_idle_minutes,
         )
     except ParseServerStartupError as exc:
         if control_watcher is not None:

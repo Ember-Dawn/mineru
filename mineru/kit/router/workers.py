@@ -136,6 +136,7 @@ class RouterSettings:
     worker_concurrency: int = 1
     preload_models: bool = False
     retention_seconds: int | None = None
+    model_idle_minutes: int = 0
     worker_refresh_interval_seconds: float = DEFAULT_WORKER_REFRESH_INTERVAL_SECONDS
 
     def __post_init__(self) -> None:
@@ -145,6 +146,8 @@ class RouterSettings:
             raise ValueError(f"Unsupported worker tier: {self.worker_tier}")
         if self.worker_concurrency <= 0:
             raise ValueError("worker_concurrency must be a positive integer")
+        if self.model_idle_minutes < 0:
+            raise ValueError("model_idle_minutes must be non-negative")
         if self.worker_refresh_interval_seconds < 0:
             raise ValueError("worker_refresh_interval_seconds must be non-negative")
 
@@ -166,6 +169,7 @@ class RouterSettings:
             worker_tier=cast(ServerTier, tier),
             worker_concurrency=int(os.getenv("MINERU_ROUTER_WORKER_CONCURRENCY", "1")),
             preload_models=os.getenv("MINERU_ROUTER_PRELOAD_MODELS", "0").lower() in {"1", "true", "yes"},
+            model_idle_minutes=int(os.getenv("MINERU_ROUTER_MODEL_IDLE_MINUTES", "0")),
         )
 
     def apply_to_env(self) -> None:
@@ -177,6 +181,7 @@ class RouterSettings:
         os.environ["MINERU_ROUTER_WORKER_TIER"] = self.worker_tier
         os.environ["MINERU_ROUTER_WORKER_CONCURRENCY"] = str(self.worker_concurrency)
         os.environ["MINERU_ROUTER_PRELOAD_MODELS"] = "1" if self.preload_models else "0"
+        os.environ["MINERU_ROUTER_MODEL_IDLE_MINUTES"] = str(self.model_idle_minutes)
 
 
 @dataclass
@@ -213,6 +218,7 @@ class ManagedLocalWorker:
             str(self.settings.retention_seconds),
             "--log-level",
             "warning",
+            *(["--model-idle-minutes", str(self.settings.model_idle_minutes)] if self.settings.model_idle_minutes else []),
             *(["--preload-models"] if self.settings.preload_models else []),
         ]
 

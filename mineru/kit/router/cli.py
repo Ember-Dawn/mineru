@@ -38,6 +38,10 @@ def router_cmd(
         help=t("Terminal retention seconds (default 86400; 0 disables collection)"),
     ),
     preload_models: bool = typer.Option(False, "--preload-models", help=t("Preload models in managed workers")),
+    model_idle_minutes: int = typer.Option(
+        0, "--model-idle-minutes", min=0,
+        help=t("Unload managed workers' cached VLMs after idle minutes (0 disables)"),
+    ),
 ) -> None:
     """启动只暴露 MinerU V1 API 的独立 Router 服务。"""
     if worker_tier not in SERVER_TIERS:
@@ -59,6 +63,7 @@ def router_cmd(
             worker_concurrency=worker_concurrency,
             preload_models=preload_models,
             retention_seconds=retention_seconds,
+            model_idle_minutes=model_idle_minutes,
         )
     except ValueError as exc:
         exit_with_message("invalid_request", str(exc))
