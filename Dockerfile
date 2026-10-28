@@ -12,7 +12,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install MinerU from this fork's local source; reuse vLLM from the base image.
+# Install the local MinerU source with Torch; reuse vLLM from the base image.
 WORKDIR /opt/mineru-source
 COPY . /opt/mineru-source/
 RUN python3 -m pip install -U '.[torch]' --break-system-packages && \
