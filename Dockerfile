@@ -23,7 +23,17 @@ ENV MINERU_MODEL_SMALL_BACKEND=torch \
     MINERU_MODEL_VLM_ENGINE=vllm
 
 # Download the Torch bundle and original VLM weights.
-RUN /bin/bash -c "mineru-kit models download --tier standard --small-backend torch --vlm-engine vllm -s huggingface"
+# Persistent BuildKit cache preserves completed and partial downloads on later builds.
+# Copy from the cache into the image: cache mount contents are not automatically exported.
+RUN --mount=type=cache,id=mineru-standard-models,target=/root/.mineru/models,sharing=locked \
+    --mount=type=cache,id=mineru-hf-xet,target=/root/.cache/huggingface,sharing=locked \
+    /bin/bash -c 'set -e; \
+      mineru-kit models download --tier standard --small-backend torch --vlm-engine vllm -s huggingface; \
+      mkdir -p /opt/mineru-bundled-models; \
+      cp -a /root/.mineru/models/. /opt/mineru-bundled-models/'
+
+# Restore normal model location in the runtime image after the cache mount is gone.
+RUN mkdir -p /root/.mineru && mv /opt/mineru-bundled-models /root/.mineru/models
 
 # Set the entry point to activate the virtual environment and run the command line tool
 ENTRYPOINT ["/bin/bash", "-c", "export MINERU_MODEL_SOURCE=local && exec \"$@\"", "--"]

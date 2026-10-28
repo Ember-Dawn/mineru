@@ -120,3 +120,31 @@ def test_active_job_and_failure_protection(monkeypatch: pytest.MonkeyPatch) -> N
         await store.shutdown()
 
     asyncio.run(check())
+
+
+def test_api_server_cli_accepts_and_forwards_model_idle_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise real `mineru-kit api-server` Typer dispatch, not just the Click implementation."""
+    from typer.testing import CliRunner
+    from mineru.kit.main import app as kit_app
+    from mineru.kit.commands import api_server as api_command
+
+    forwarded: dict[str, object] = {}
+
+    def capture_cli_call(*, args, prog_name, standalone_mode):
+        forwarded["args"] = args
+        forwarded["prog_name"] = prog_name
+        forwarded["standalone_mode"] = standalone_mode
+
+    monkeypatch.setattr(api_command.parser_api_server.main, "main", capture_cli_call)
+    runner = CliRunner()
+    result = runner.invoke(kit_app, ["api-server", "--model-idle-minutes", "30"])
+    assert result.exit_code == 0, result.output
+    args = forwarded["args"]
+    assert args[args.index("--model-idle-minutes") + 1] == "30"
+    assert forwarded["standalone_mode"] is False
+
+    help_result = runner.invoke(kit_app, ["api-server", "--help"])
+    assert help_result.exit_code == 0, help_result.output
+    assert "--model-idle-minutes" in help_result.output
+    invalid_result = runner.invoke(kit_app, ["api-server", "--model-idle-minutes", "-1"])
+    assert invalid_result.exit_code != 0
