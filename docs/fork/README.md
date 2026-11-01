@@ -30,7 +30,6 @@
 ## 当前待办/已知风险
 
 - VLM 空闲释放显存已实测；同一 Worker 内卸载后的首次重新解析仍需独立验证。
-- WebUI 曾出现 `No parsed document is available` 的下载状态错误；**尚未定位或确认修复**。参见 `DEPLOYMENT.md`。
 - Docker BuildKit 缓存不是备份或永久存储，首次切换缓存策略可能重新下载模型。
 
 本目录不保存机器私密信息、Token、SSH 密钥等。
