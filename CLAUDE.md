@@ -1,5 +1,23 @@
 # MinerU 项目编码规范
 
+## Ember-Dawn/mineru Fork 维护入口
+
+本仓库是 `opendatalab/MinerU` 的定制 Fork。进行定制开发、排障或上游升级前，先阅读：
+
+- `docs/fork/README.md`：Fork 入口与阅读顺序。
+- `docs/fork/CUSTOMIZATIONS.md`：定制功能与修改文件地图。
+- `docs/fork/ARCHITECTURE.md`：Router、Worker、VLM 生命周期。
+- `docs/fork/DEPLOYMENT.md`：本地 Docker 构建与实机验证。
+- `docs/fork/UPGRADING.md`：官方新版本的升级与回归流程。
+
+维护时以 `master` 当前完整源码为准，确认相关 Git blob SHA；不凭文档推断未读源码。
+保留本文件原有编码规范；定制代码修改时同步更新相关 Fork 文档。
+实测、轻量测试及待验证事项必须明确区分。官方更新时应重新评估自定义逻辑，
+而不是盲目保留旧实现。用户通过 git-bridge 维护多设备同步，
+无需在常规说明中重复 Git 同步命令。
+
+---
+
 ## 开发环境
 
 使用 **uv** 管理 Python 虚拟环境和依赖。
@@ -129,7 +147,7 @@ def parse(
 # 差 — import 时执行
 os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
 
-# 好 — 使用时执行
+# 好 — 使用时创建
 def parse(...):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 ```
@@ -183,7 +201,7 @@ DocVortex 的确定性后处理独立构造有效 MiddleJson。`mineru.backend.p
 
 `mineru.render` 保留九种输出：Content List V1/V2 实现及专用选项归属 MinerU，其余七种 renderer 和通用选项来自 DocVortex。两边各自定义 RenderFormat，RenderMode 与共享文档类型仍复用。Content List 通过 `docvortex.render.fragments` 调用共享片段能力，不导入私有实现。公式定界符等宿主配置显式传入，不让 DocVortex 读取 MinerU 配置。
 
-九种输出为 Markdown、HTML、LaTeX、DOCX、EPUB、PDF、Structured Content、Content List V1/V2。LaTeX/EPUB/PDF/Content List 的低层能力不自动扩展所有产品入口。PDF 输出布局由 `PdfLayout` 控制：`AUTO`（默认，有几何信息时保留原始布局，缺失时回退语义重排）、`ORIGINAL`（仅原始布局）、`REFLOW`（仅语义重排）。
+九种输出为 Markdown、HTML、LaTeX、DOCX、EPUB、PDF、Structured Content、Content List V1/V2。LaTeX/EPUB/PDF/Content List 的低层能力不自动扩展所有产品入口。PDF 输出布局由 `PdfLayout` 控制：`AUTO`（默认，有几何信息时保留原始布局，缺失时回退语义重排）、`ORIGINAL`（仅原始布局）、`REFLOW`（仅语义重排）。 
 
 文件写出属于 `docvortex.export`；语义类型不再提供文件导出方法。结果包保存中间协议和物化素材，渲染不依赖已关闭的 PDFium 对象或源文件，也不修改原始语义树。
 
