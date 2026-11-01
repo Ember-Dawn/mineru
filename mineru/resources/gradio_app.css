@@ -220,7 +220,56 @@ body.dark .gradio-container {
     padding-right: 0 !important;
 }
 .block.mineru-status-panel .prose,
-.block.mineru-status-panel .status-steps-panel {
+.block.mineru-status-panel /* Match the existing conversion-status card, without Gradio's default group background. */
+.mineru-image-host {
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: 8px !important;
+    border: 1px solid var(--mineru-panel-border) !important;
+    border-radius: 8px !important;
+    background: var(--mineru-status-panel-bg) !important;
+    padding: 12px !important;
+}
+.mineru-image-host-heading,
+.mineru-image-host-status {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+}
+.mineru-image-host-heading .html-container,
+.mineru-image-host-status .html-container {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+.mineru-image-host-title {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--body-text-color);
+}
+.mineru-image-host-button {
+    width: 100% !important;
+    margin: 0 !important;
+    min-height: 34px !important;
+}
+.mineru-image-host-button:not(:disabled) {
+    background: var(--mineru-accent) !important;
+    border-color: var(--mineru-accent) !important;
+    color: #fff !important;
+}
+.mineru-image-host-status {
+    color: var(--body-text-color-subdued);
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.mineru-image-host-status small {
+    font-size: inherit;
+}
+
+.status-steps-panel {
     width: 100% !important;
     max-width: none !important;
 }

@@ -486,10 +486,24 @@ def build_gradio_app(
                     )
                     clear_button = gr.ClearButton(value=i18n("mineru.clear"), scale=1, min_width=1)
                 status_panel = gr.HTML(_status_html(), elem_classes=["mineru-status-panel"])
-                with gr.Group(elem_classes=["mineru-image-host"]):
-                    gr.Markdown("**图床上传 / Image hosting**", container=False)
-                    image_host_button = gr.Button("生成图床版 MD", interactive=False, size="sm")
-                    image_host_status = gr.HTML(value="<small>等待转换完成</small>")
+                with gr.Column(elem_classes=["mineru-image-host"]):
+                    gr.HTML(
+                        value=f'<div class="mineru-image-host-title">{localized_text("image_host_title")}</div>',
+                        elem_classes=["mineru-image-host-heading"],
+                        apply_default_css=False,
+                    )
+                    image_host_button = gr.Button(
+                        i18n("mineru.image_host_generate"),
+                        variant="primary",
+                        interactive=False,
+                        size="sm",
+                        elem_classes=["mineru-image-host-button"],
+                    )
+                    image_host_status = gr.HTML(
+                        value=f'<small>{localized_text("image_host_waiting")}</small>',
+                        elem_classes=["mineru-image-host-status"],
+                        apply_default_css=False,
+                    )
                     image_host_file = gr.File(visible=False, interactive=False, show_label=False)
 
                 if examples:
@@ -1251,7 +1265,7 @@ def build_gradio_app(
         )
         gr.on(
             triggers=[input_file.change, clear_button.click, convert_button.click],
-            fn=lambda: (gr.update(value="生成图床版 MD", interactive=False), "<small>等待转换完成</small>", gr.update(value=None, visible=False)),
+            fn=lambda: (gr.update(value="生成图床版 MD", interactive=False), f'<small>{localized_text("image_host_waiting")}</small>', gr.update(value=None, visible=False)),
             inputs=[], outputs=[image_host_button, image_host_status, image_host_file], queue=False, api_visibility="private",
         )
         image_host_button.click(
