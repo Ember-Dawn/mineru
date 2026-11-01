@@ -127,10 +127,14 @@ body.dark .gradio-container {
 .mineru-upload-file .file-preview .file,
 .mineru-upload-file .file-container .file,
 .mineru-upload-file .file-list .file {
-    border: 1px solid var(--mineru-panel-border) !important;
-    border-radius: 6px !important;
-    background: var(--mineru-status-panel-bg) !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--mineru-panel-border) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
     box-shadow: none !important;
+    margin: 0 !important;
+    padding: 6px 8px !important;
+    min-height: 38px !important;
 }
 /* 示例块：吸收控制列剩余高度，与状态卡一致的卡片外观；文件多时内部滚动。 */
 #mineru-kit-examples {
@@ -598,4 +602,73 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 }
 .mineru-control-column {
     padding-bottom: 6px !important;
+}
+
+/* Flat uploaded PDF rows: keep native actions and remove nested visual cards. */
+.mineru-upload-file .file-preview,
+.mineru-upload-file .file-container,
+.mineru-upload-file .file-list {
+    gap: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+.mineru-upload-file .file-list .file:last-child,
+.mineru-upload-file .file-preview .file:last-child {
+    border-bottom: 0 !important;
+}
+/* Match the horizontal positioning of the batch bar and ZIP button. */
+.mineru-combined-status .mineru-batch-status {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    margin: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+.mineru-combined-status .mineru-batch-status .mineru-batch-progress-line {
+    margin: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+.mineru-combined-status .mineru-batch-zip-row {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+}
+/* Image-host action has no extra outside card. */
+.mineru-control-column .mineru-image-host {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+/* One grey history region, without additional outer border. */
+.mineru-control-column .mineru-history-card {
+    background: var(--block-background-fill, var(--mineru-panel)) !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    padding: 10px 12px !important;
+    gap: 8px !important;
+}
+.mineru-history-card .mineru-history-select {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+.mineru-history-card .mineru-history-select .wrap,
+.mineru-history-card .mineru-history-select .secondary-wrap {
+    border-radius: 6px !important;
+    box-shadow: none !important;
+}
+.mineru-history-card .mineru-history-select input {
+    text-overflow: ellipsis;
+}
+.mineru-history-card .mineru-history-buttons {
+    gap: 8px !important;
+    padding: 0 !important;
 }
