@@ -505,7 +505,7 @@ body.dark .gradio-container {
 .mineru-batch-status div { margin: 3px 0; overflow-wrap: anywhere; }
 
 /* Compact full-width ZIP action with exact enabled/disabled colors. */
-.mineru-batch-zip-button { width: 100% !important; min-height: 42px !important; font-size:16px !important; font-weight:700 !important; color:#fff !important; }
+.mineru-batch-zip-button { width: 100% !important; min-height: 34px !important; font-size:16px !important; font-weight:700 !important; color:#fff !important; }
 button.mineru-batch-zip-button:not(:disabled), .mineru-batch-zip-button button:not(:disabled) { background:#ea580c !important; border-color:#ea580c !important; color:#fff !important; }
 button.mineru-batch-zip-button:not(:disabled):hover, .mineru-batch-zip-button button:not(:disabled):hover { background:#c2410c !important; border-color:#c2410c !important; }
 button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disabled { background:#52525b !important; border-color:#52525b !important; color:#fff !important; opacity:1 !important; }
@@ -519,13 +519,6 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 .mineru-history-buttons button { flex:1 1 0; min-width:0; }
 .mineru-kit-control:has(.mineru-batch-count-marker[data-batch="true"]) .mineru-kit-page-range { display:none !important; }
 
-/* ZIP export lives inside the status panel as a compact secondary action. */
-.mineru-combined-status .mineru-batch-zip-row { justify-content:flex-end !important; padding:0 12px 12px !important; margin:0 !important; background:transparent !important; border:0 !important; }
-.mineru-combined-status .mineru-batch-zip-button { width:auto !important; flex:0 0 auto !important; min-width:100px !important; min-height:32px !important; height:34px !important; padding:4px 14px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }
-
-.mineru-combined-status .mineru-batch-zip-row { justify-content:flex-end !important; padding:0 12px 12px !important; margin:0 !important; background:transparent !important; border:0 !important; }
-.mineru-combined-status .mineru-batch-zip-button { width:auto !important; flex:0 0 auto !important; min-width:100px !important; min-height:32px !important; height:34px !important; padding:4px 14px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }
-
 /* The native Gradio file list is the only visible pending-file list. */
 .mineru-upload-file .file-preview, .mineru-upload-file .file-list,
 .mineru-upload-file .file-container { max-height: none !important; overflow: visible !important; }
@@ -533,9 +526,15 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 /* Compact, single-row overall batch progress. */
 .mineru-combined-status { height:auto !important; min-height:0 !important; flex:0 0 auto !important; }
 .mineru-combined-status .mineru-batch-status { padding:0 12px 6px !important; flex:0 0 auto !important; }
-.mineru-batch-current { font-size:13px; margin-bottom:7px !important; }
 .mineru-batch-progress-line { display:flex; align-items:center; gap:12px; width:100%; }
 .mineru-batch-progress-line .mineru-batch-progress-track { flex:1 1 auto; height:12px !important; }
 .mineru-batch-progress-numbers { flex:0 0 auto; min-width:38px; text-align:right; font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
 .mineru-batch-error { margin-top:6px !important; }
 .mineru-history-buttons button { min-height:32px !important; height:34px !important; padding:4px 12px !important; font-size:14px !important; line-height:1.2 !important; }
+
+/* The hidden batch-mode marker must not create a spacer above the upload component. */
+.mineru-batch-marker, .mineru-batch-marker.block,
+.mineru-batch-marker .html-container { display:none !important; height:0 !important; min-height:0 !important; margin:0 !important; padding:0 !important; border:0 !important; }
+/* Keep the ZIP button compact in height but full-width inside status. */
+.mineru-combined-status .mineru-batch-zip-row { width:100% !important; justify-content:stretch !important; padding:2px 12px 12px !important; margin:0 !important; min-height:0 !important; background:transparent !important; border:0 !important; }
+.mineru-combined-status .mineru-batch-zip-button { width:100% !important; flex:1 1 auto !important; min-width:0 !important; min-height:32px !important; height:34px !important; padding:4px 12px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }

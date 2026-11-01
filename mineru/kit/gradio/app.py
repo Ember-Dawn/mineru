@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import html
 import json
+import re
 import os
 import time
 import uuid
@@ -1102,8 +1103,21 @@ def build_gradio_app(
                 run_id = json.loads(ticket)["run_id"]
             except (ValueError, TypeError, KeyError):
                 return ""
-            run = conversions.current(getattr(request, "session_hash", "") or "", run_id)
-            return run.snapshot if run is not None else ""
+            session = getattr(request, "session_hash", "") or ""
+            run = conversions.current(session, run_id)
+            if run is None:
+                return ""
+            snapshot = run.snapshot
+            job = batches.jobs.get(batches.active.get(session, ""))
+            if job is not None and len(job.files) > 1 and snapshot:
+                current = next(((index, item) for index, item in enumerate(job.files, 1)
+                                if item.status == "running"), None)
+                if current is not None:
+                    receipt = json.loads(snapshot)
+                    receipt["html"] = replace_batch_latest(receipt["html"],
+                        f"第 {current[0]}/{len(job.files)} 个：{Path(current[1].source).name}")
+                    snapshot = json.dumps(receipt, ensure_ascii=False)
+            return snapshot
 
         async def cancel_ui_conversion(ticket: str, request: object | None = None) -> None:
             """只取消浏览器刚刚撤销的那次任务，避免晚到请求误伤新任务。"""
@@ -1133,6 +1147,12 @@ def build_gradio_app(
             await cancel_session_conversion(request)
             conversions.revisions.pop(getattr(request, "session_hash", "") or "", None)
 
+        def replace_batch_latest(rendered: str, message: str) -> str:
+            """Replace only status text; preserve stage markup and status-sequence attributes."""
+            return re.sub(r'(<div class="status-latest"[^>]*>).*?(</div>)',
+                          lambda match: match.group(1) + html.escape(message) + match.group(2),
+                          rendered, count=1, flags=re.DOTALL)
+
         def batch_summary(job: Any) -> str:
             """One horizontal bar for completed files; file phases live in the main status card."""
             if len(job.files) <= 1:
@@ -1142,12 +1162,7 @@ def build_gradio_app(
             processed = completed + len(failed)
             total = len(job.files)
             pct = min(100.0, processed * 100.0 / total)
-            current = next(((i, item) for i, item in enumerate(job.files, 1)
-                            if item.status == "running"), None)
-            headline = (f'<div class="mineru-batch-current">第 {current[0]}/{total} 个：'
-                        f'{html.escape(Path(current[1].source).name)}</div>') if current else ""
-            output = (headline
-                      + '<div class="mineru-batch-progress-line">'
+            output = ('<div class="mineru-batch-progress-line">'
                       + f'<div class="mineru-batch-progress-track"><div class="mineru-batch-progress-fill" '
                         f'style="width:{pct:.1f}%"></div></div>'
                       + f'<span class="mineru-batch-progress-numbers">{processed}/{total}</span></div>')
@@ -1163,8 +1178,9 @@ def build_gradio_app(
                 return rendered
             completed = sum(item.status == "completed" for item in job.files)
             failed = sum(item.status == "failed" for item in job.files)
-            return rendered.replace('</div></div>',
-                                    html.escape(f' · 成功 {completed} · 失败 {failed}') + '</div></div>', 1)
+            return replace_batch_latest(rendered,
+                                        f"批量完成：成功 {completed} · 失败 {failed}" if not failed
+                                        else f"批量结束：成功 {completed} · 失败 {failed}")
 
         async def convert_ui(
             file_path: str | None,
