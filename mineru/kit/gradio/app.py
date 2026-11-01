@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
 import json
 import os
@@ -399,6 +400,7 @@ def build_gradio_app(
     conversions = SessionConversions()
     batches = BatchRegistry()
     selected_jobs: dict[str, str] = {}
+    pending_uploads: dict[str, list[str]] = {}
 
     with gr.Blocks() as demo:
         gr.HTML(
@@ -407,6 +409,8 @@ def build_gradio_app(
         )
         with gr.Row(elem_classes=["mineru-kit-workspace"]):
             with gr.Column(scale=2, min_width=280, elem_classes=["mineru-kit-control", "mineru-control-column"]):
+                batch_count_marker = gr.HTML(value='<span class="mineru-batch-count-marker" data-batch="false"></span>',
+                                             elem_classes=["mineru-batch-marker"], apply_default_css=False)
                 batch_upload = gr.File(
                     label=i18n("mineru.upload"),
                     file_types=file_types,
@@ -414,6 +418,7 @@ def build_gradio_app(
                     type="filepath",
                     elem_classes=["mineru-upload-file"],
                 )
+                pending_list = gr.HTML(value="", elem_classes=["mineru-upload-pending"], apply_default_css=False)
                 # The original single-file preview chain stays isolated from list-valued uploads.
                 input_file = gr.File(
                     visible=False,
@@ -498,13 +503,13 @@ def build_gradio_app(
                         elem_classes=["mineru-convert-button"],
                     )
                     clear_button = gr.ClearButton(value=i18n("mineru.clear"), scale=1, min_width=1)
-                status_panel = gr.HTML(_status_html(), elem_classes=["mineru-status-panel"])
-                batch_status = gr.HTML(value="", elem_classes=["mineru-batch-status"])
-                with gr.Column(elem_classes=["mineru-batch-actions"]):
-                    gr.Markdown(i18n("mineru.batch_results"), container=False)
-                    batch_zip_button = gr.Button(i18n("mineru.batch_zip"), interactive=False, size="sm")
-                    batch_zip_file = gr.File(visible=False, interactive=False)
-                    batch_zip_receipt = gr.Textbox(value="", visible=False)
+                with gr.Column(elem_classes=["mineru-combined-status"]):
+                    status_panel = gr.HTML(_status_html(), elem_classes=["mineru-status-panel"])
+                    batch_status = gr.HTML(value="", elem_classes=["mineru-batch-status"])
+                batch_zip_button = gr.Button(i18n("mineru.batch_zip"), interactive=False, size="sm",
+                                             elem_classes=["mineru-batch-zip-button"])
+                batch_zip_file = gr.File(visible=False, interactive=False)
+                batch_zip_receipt = gr.Textbox(value="", visible=False)
                 with gr.Column(elem_classes=["mineru-image-host"]):
                     gr.HTML(
                         value=f'<div class="mineru-image-host-title">{localized_text("image_host_title")}</div>',
@@ -525,13 +530,12 @@ def build_gradio_app(
                     )
                     image_host_file = gr.File(visible=False, interactive=False, show_label=False)
                     image_host_download_token = gr.Textbox(value="", visible=False)
-                with gr.Accordion(i18n("mineru.history_title"), open=False):
-                    history_choices = gr.Dropdown(choices=[], label=i18n("mineru.history_list"), interactive=True)
-                    with gr.Row():
-                        history_refresh = gr.Button(i18n("mineru.history_refresh"), size="sm")
-                        history_restore = gr.Button(i18n("mineru.history_restore"), size="sm")
-                        history_clear = gr.Button(i18n("mineru.history_clear"), size="sm")
-                    history_notice = gr.Markdown("")
+                history_choices = gr.Dropdown(choices=[], label=i18n("mineru.history_title"), interactive=True,
+                                              elem_classes=["mineru-history-select"])
+                with gr.Row(elem_classes=["mineru-history-buttons"]):
+                    history_restore = gr.Button(i18n("mineru.history_restore"), size="sm")
+                    history_clear = gr.Button(i18n("mineru.history_clear"), size="sm")
+                history_notice = gr.Markdown("", elem_classes=["mineru-history-notice"])
 
                 if examples:
                     gr.Examples(
@@ -620,6 +624,10 @@ def build_gradio_app(
                 download_notice = gr.HTML(value="", elem_classes=["mineru-kit-download-notice"])
 
         batch_count = gr.Textbox(value="0", visible=False)
+        batch_count.change(
+            fn=lambda count: f'<span class="mineru-batch-count-marker" data-batch="{str(int(count or 0) > 1).lower()}"></span>',
+            inputs=batch_count, outputs=batch_count_marker, queue=False, api_visibility="private",
+        )
         artifact_state = gr.State(value=None)
         active_run_id = gr.Textbox(value="", visible=False)
         conversion_ticket = gr.Textbox(value="", visible=False)
@@ -635,6 +643,7 @@ def build_gradio_app(
             [
                 batch_upload,
                 input_file,
+                pending_list,
                 page_range,
                 force_ocr,
                 html_output,
@@ -711,20 +720,47 @@ def build_gradio_app(
         def sync_upload(files: list[str] | None, request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
-                return tuple(gr.skip() for _ in range(6))
+                return tuple(gr.skip() for _ in range(7))
             selected_jobs.pop(session, None)
-            paths = list(files or [])
+            incoming = list(files or [])
+            if not incoming:
+                pending_uploads.pop(session, None)
+            else:
+                merged = pending_uploads.setdefault(session, [])
+                seen = set()
+                for previous in merged:
+                    p = Path(previous)
+                    if p.is_file():
+                        seen.add((p.name, p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest()))
+                for name in incoming:
+                    p = Path(name)
+                    if not p.is_file():
+                        continue
+                    identity = (p.name, p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest())
+                    if identity not in seen:
+                        merged.append(str(p))
+                        seen.add(identity)
+            paths = pending_uploads.get(session, [])
             first = paths[0] if paths else None
             label = "批量转换" if len(paths) > 1 else "转换"
+            summary = (f'<div class="mineru-pending-title">待处理文件：{len(paths)} 个</div>'
+                       + ''.join(f'<div>{html.escape(Path(p).name)}</div>' for p in paths)) if paths else ""
             return (gr.update(value=first), gr.update(value=label, interactive=bool(paths)),
-                    gr.update(value=""), gr.update(interactive=False), "", str(len(paths)))
+                    gr.update(value=""), gr.update(interactive=False), "", str(len(paths)), summary)
 
         sync_upload.__annotations__["request"] = gr.Request
         batch_upload.change(
             fn=sync_upload, inputs=batch_upload,
-            outputs=[input_file, convert_button, batch_status, batch_zip_button, active_run_id, batch_count],
+            outputs=[input_file, convert_button, batch_status, batch_zip_button, active_run_id, batch_count, pending_list],
             queue=False, api_visibility="private",
         )
+
+        def reset_pending_on_clear(request: object | None = None) -> None:
+            session = getattr(request, "session_hash", "") or ""
+            if not batches.busy(session):
+                pending_uploads.pop(session, None)
+        reset_pending_on_clear.__annotations__["request"] = gr.Request
+        clear_button.click(fn=reset_pending_on_clear, inputs=[], outputs=[], queue=False, api_visibility="private")
 
         # 换文件和清除先在浏览器中撤销旧预览，文件输出仍由原有 Python 事件管理。
         input_file.change(fn=None, inputs=input_file, outputs=pdf_viewer, js=pdf_preview_js("reset"), **private_event_kwargs)
@@ -1080,11 +1116,21 @@ def build_gradio_app(
             conversions.revisions.pop(getattr(request, "session_hash", "") or "", None)
 
         def batch_summary(job: Any) -> str:
-            parts = [f"<div><b>{len(job.files)} 个文件 · 已完成 {sum(bool(i.artifacts) for i in job.files)}</b></div>"]
-            for item in job.files:
-                state = "完成" if item.artifacts else "失败"
-                parts.append(f"<div>{html.escape(Path(item.source).name)} · {state}</div>")
-            return "".join(parts)
+            if len(job.files) <= 1:
+                return ""
+            completed = sum(item.status == "completed" for item in job.files)
+            failed = [item for item in job.files if item.status == "failed"]
+            processed = completed + len(failed)
+            total = len(job.files)
+            percent = min(100, processed * 100 / total)
+            result = (f'<div class="mineru-batch-progress-title"><span>批量进度</span><span>{processed} / {total}</span></div>'
+                      f'<div class="mineru-batch-progress-track"><div class="mineru-batch-progress-fill" '
+                      f'style="width:{percent:.1f}%"></div></div>'
+                      f'<div class="mineru-batch-count">成功 {completed} · 失败 {len(failed)}</div>')
+            for item in failed:
+                result += (f'<div class="mineru-batch-error">{html.escape(Path(item.source).name)} · '
+                           f'失败：{html.escape(item.error or "解析失败")}</div>')
+            return result
 
         async def convert_ui(
             file_path: str | None,
@@ -1109,7 +1155,7 @@ def build_gradio_app(
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
                 return ""
-            paths = list(files or ([file_path] if file_path else []))
+            paths = list(pending_uploads.get(session) or files or ([file_path] if file_path else []))
             if not paths:
                 return ""
             run = conversions.start(session, run_id, revision=revision)
@@ -1234,6 +1280,21 @@ def build_gradio_app(
             show_progress="hidden",
             **private_event_kwargs,
         )
+        def poll_batch_summary(ticket: str, request: object | None = None) -> Any:
+            session = getattr(request, "session_hash", "") or ""
+            active = batches.jobs.get(batches.active.get(session, ""))
+            if active is None or len(active.files) <= 1:
+                return gr.skip()
+            try:
+                identity = json.loads(ticket or "{}")
+            except (ValueError, TypeError):
+                return gr.skip()
+            run = conversions.current(session, identity.get("run_id", ""))
+            return batch_summary(active) if run is not None else gr.skip()
+        poll_batch_summary.__annotations__["request"] = gr.Request
+        status_poll.tick(fn=poll_batch_summary, inputs=conversion_ticket, outputs=batch_status,
+                         trigger_mode="always_last", queue=False, api_visibility="private")
+
         status_snapshot.change(
             fn=None,
             inputs=status_snapshot,
@@ -1385,8 +1446,6 @@ def build_gradio_app(
         def refresh_history() -> Any:
             return gr.update(choices=batches.choices())
 
-        history_refresh.click(fn=refresh_history, inputs=[], outputs=history_choices,
-                              queue=False, api_visibility="private")
         demo.load(fn=refresh_history, inputs=[], outputs=history_choices,
                   queue=False, api_visibility="private")
 
