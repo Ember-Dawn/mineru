@@ -1253,7 +1253,7 @@ def build_gradio_app(
                     elif action == "done":
                         if conversions.runs.get(session) is not run or run.cancelled:
                             return
-                        yield gr.update(value="下载图床版 MD", interactive=True), "<small>已完成，点击可再次下载</small>", gr.update(value=str(payload), visible=True)
+                        yield gr.update(value="下载图床版 MD", interactive=True), "<small>已完成，点击可再次下载</small>", gr.update(value=str(payload), visible=False)
                         return
                     else:
                         raise payload

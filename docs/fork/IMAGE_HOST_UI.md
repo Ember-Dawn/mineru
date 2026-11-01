@@ -29,3 +29,11 @@ EasyImages 图床导出在 Gradio 左侧解析状态卡片下方，以独立紧�
 - 图床版 Markdown 采用原文档 stem 加 `.md`，不追加 `_easyimages`（例如 `小人研究-测试.md`）。
 - 成品仍位于每次任务的 `downloads/` 目录，不覆盖原始 `markdown.md`；上传缓存保持不变。
 - 旧的 `_easyimages.md` 文件不会自动删除，重新生成将使用新名称。
+
+
+## 文件组件视觉优化
+
+- 图床按钮固定为 `#ea580c`，Hover 为 `#c2410c`；仅影响图床按钮，保留现有字体与 padding。
+- PDF 上传仍使用原生 `gr.File`，只限定弱化 `.mineru-upload-file` 内层文件容器的视觉框线，不更改上传及预览行为。
+- 图床结果文件组件始终 `visible=False`，更新文件值以触发现有自动下载事件，避免出现第二个可见下载框。
+- 隐藏文件组件下的 `change` 自动下载行为和浏览器最终样式尚需 Gradio 实机验证。

@@ -115,6 +115,23 @@ body.dark .gradio-container {
 .mineru-upload-file label[data-testid="block-label"] > span {
     margin-top: 2px;
 }
+/* Flatten only the inner uploaded-file wrappers; keep native File behavior. */
+.mineru-upload-file .file-preview,
+.mineru-upload-file .file-container,
+.mineru-upload-file .file-list {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+}
+.mineru-upload-file .file-preview .file,
+.mineru-upload-file .file-container .file,
+.mineru-upload-file .file-list .file {
+    border: 1px solid var(--mineru-panel-border) !important;
+    border-radius: 6px !important;
+    background: var(--mineru-status-panel-bg) !important;
+    box-shadow: none !important;
+}
 /* 示例块：吸收控制列剩余高度，与状态卡一致的卡片外观；文件多时内部滚动。 */
 #mineru-kit-examples {
     width: 100% !important;
@@ -265,10 +282,16 @@ body.dark .gradio-container {
 /* Gradio may attach elem_classes to the button itself or to a wrapper. */
 .mineru-image-host button.mineru-image-host-button:not(:disabled),
 .mineru-image-host .mineru-image-host-button button:not(:disabled) {
-    background: var(--mineru-accent) !important;
-    border: 1px solid var(--mineru-accent) !important;
+    background: #ea580c !important;
+    border: 1px solid #ea580c !important;
     color: #fff !important;
     -webkit-text-fill-color: #fff !important;
+}
+/* Only the image-host action uses this fixed hover shade. */
+.mineru-image-host button.mineru-image-host-button:not(:disabled):hover,
+.mineru-image-host .mineru-image-host-button button:not(:disabled):hover {
+    background: #c2410c !important;
+    border-color: #c2410c !important;
 }
 .mineru-image-host button.mineru-image-host-button:disabled,
 .mineru-image-host .mineru-image-host-button button:disabled {
