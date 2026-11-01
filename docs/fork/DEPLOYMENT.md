@@ -54,16 +54,3 @@ nvidia-smi
 
 Dockerfile 中 `mineru-standard-models` 与 `mineru-hf-xet` 是 BuildKit 缓存 ID，而 `target` 是构建容器路径，不是宿主机的 `/root/...`。最终镜像模型仍位于 `/root/.mineru/models`。缓存可能被清理，不代替模型备份；首次采用新缓存策略可能重新下载。
 
-## WebUI 下载异常（待验证）
-
-历史现象：预览已显示解析内容，点击 Markdown / JSON 下载弹 `No parsed document is available`。对应 `kit/gradio/artifacts.py` 中 State 非字典异常。调查过会话状态覆盖，但**不能确定根因**；后续用户曾重新构建尝试，未留存修复结论。
-
-排查建议：
-
-```bash
-docker compose logs --tail=120 mineru-webui
-docker exec mineru-webui sh -c 'readlink -f /proc/1/cwd; tr "\000" " " < /proc/1/cmdline; echo'
-docker exec mineru-webui sh -c 'find /opt/mineru-source /app /tmp /root -type f \( -name markdown.md -o -name structured_content.json \) 2>/dev/null | tail -30'
-```
-
-若需要复现，请先用 1~3 页小 PDF，保存浏览器 Console、WebUI 日志、当前会话和生成文件路径；不要在确认文件保存位置前删除容器。
