@@ -121,6 +121,8 @@ services:
       - "9091:7860"
     environment:
       MINERU_MODEL_SOURCE: local
+      EASYIMAGES_API_URL: ${EASYIMAGES_API_URL:-}
+      EASYIMAGES_TOKEN: ${EASYIMAGES_TOKEN:-}
     entrypoint: ["mineru-kit"]
     command:
       - webui

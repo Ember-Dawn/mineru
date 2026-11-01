@@ -144,3 +144,7 @@ Office 转换开始、失败及成功后都保留已挂载的源预览。“忽�
 PDF 和图片会生成与解析范围一致的 `origin.pdf`；布局预览使用 schema 2.0 顶层 block/bbox 生成语义 overlay。无法生成 overlay 时仍保留 origin PDF 预览。
 
 `mineru-webui` 提供为 `mineru-kit webui` 的独立命令名，参数与行为完全相同；旧 HTTP 协议和旧 Gradio 专属参数不再提供。
+
+## EasyImages2.0 standalone Markdown (Fork)
+
+The left column has an optional image-hosting card below conversion status. Configure `EASYIMAGES_API_URL` (HTTPS site root, without `/api/index.php`) and `EASYIMAGES_TOKEN` in the WebUI container. After conversion, select “生成图床版 MD” to upload Markdown-referenced local images and download a standalone `.md` file. Original archives are not rewritten. Per-run upload URLs are cached under `downloads/easyimages_upload_state.json`; transient failures may be retried. Image uploads are serial with a shared 0.6-second minimum request-start interval and no minute quota.

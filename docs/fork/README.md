@@ -7,7 +7,7 @@
 - 仓库：`Ember-Dawn/mineru`；官方上游：`opendatalab/MinerU`。
 - 历史改造基线：创建 Fork 时对齐过 `mineru-4.0.12-released`；**这不是持续准确的当前上游基线**。升级前必须重新检查 Git 历史和当前 Release。
 - 部署：本地源码构建 Docker 镜像；Router 管理本地 API Worker，WebUI 调用 Router。
-- 自定义功能：VLM 空闲卸载、API CLI 参数透传、本地双容器部署、BuildKit 模型缓存。
+- 自定义功能：VLM 空闲卸载、API CLI 参数透传、本地双容器部署、BuildKit 模型缓存、Gradio EasyImages 图床版 Markdown 导出。
 - 同步方式：用户通过 **git-bridge** 管理仓库与服务器同步；无需在日常答复中重复 Git 同步命令。
 
 ## 阅读顺序
@@ -30,6 +30,7 @@
 ## 当前待办/已知风险
 
 - VLM 空闲释放显存已实测；同一 Worker 内卸载后的首次重新解析仍需独立验证。
+- WebUI 曾出现 `No parsed document is available` 的下载状态错误；**尚未定位或确认修复**。参见 `DEPLOYMENT.md`。
 - Docker BuildKit 缓存不是备份或永久存储，首次切换缓存策略可能重新下载模型。
 
 本目录不保存机器私密信息、Token、SSH 密钥等。

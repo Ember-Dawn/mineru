@@ -30,6 +30,7 @@ from ...types import TIERS, Tier
 from ...utils.logger import configure_global_log_level
 from ...utils.stdio import configure_standard_streams
 from .artifacts import RunArtifacts, persist_parse_result, render_download, render_html_preview
+from .image_host import configured as image_host_configured, generate as generate_image_host_markdown
 from .client import (
     GradioArtifactClient,
     ManagedLocalApiServer,
@@ -485,6 +486,12 @@ def build_gradio_app(
                     )
                     clear_button = gr.ClearButton(value=i18n("mineru.clear"), scale=1, min_width=1)
                 status_panel = gr.HTML(_status_html(), elem_classes=["mineru-status-panel"])
+                with gr.Group(elem_classes=["mineru-image-host"]):
+                    gr.Markdown("**图床上传 / Image hosting**", container=False)
+                    image_host_button = gr.Button("生成图床版 MD", interactive=False, size="sm")
+                    image_host_status = gr.HTML(value="<small>等待转换完成</small>")
+                    image_host_file = gr.File(visible=False, interactive=False, show_label=False)
+
                 if examples:
                     gr.Examples(
                         examples=examples,
@@ -1189,6 +1196,75 @@ def build_gradio_app(
                 return renderer(state, token, request)
 
             return handler
+
+        # Run uploads outside the parse slot and stream compact progress through a queue.
+        def image_host_safe_handler(state: object, request: object | None = None):
+            import queue
+            import threading
+
+            session = getattr(request, "session_hash", "") or ""
+            run = conversions.runs.get(session)
+            try:
+                if run is None or run.cancelled or run.artifacts is None:
+                    raise ValueError("No current conversion result")
+                artifacts = RunArtifacts.from_state(run.artifacts)
+                supplied = RunArtifacts.from_state(state)
+                if supplied.root != artifacts.root:
+                    raise ValueError("Conversion result changed")
+                report: queue.Queue[tuple[str, object, int]] = queue.Queue()
+                def notify(done: int, total: int) -> None:
+                    report.put(("progress", done, total))
+                def worker() -> None:
+                    try:
+                        path = generate_image_host_markdown(artifacts, allowed_root=output_root, progress=notify)
+                        report.put(("done", str(path), 0))
+                    except Exception as exc:
+                        report.put(("error", exc, 0))
+                threading.Thread(target=worker, daemon=True).start()
+                yield gr.update(value="上传中...", interactive=False), "<small>正在准备图片...</small>", gr.update(value=None, visible=False)
+                while True:
+                    action, payload, total = report.get()
+                    if conversions.runs.get(session) is not run or run.cancelled:
+                        return
+                    if action == "progress":
+                        done = int(payload)
+                        pct = (done / total * 100) if total else 100
+                        status = (f'<div style="height:5px;background:var(--border-color-primary,#555);border-radius:4px;overflow:hidden">'
+                                  f'<div style="height:100%;width:{pct:.1f}%;background:#ea580c"></div></div>'
+                                  f'<small>上传中 {done}/{total}</small>')
+                        yield gr.update(value=f"上传中 {done}/{total}", interactive=False), status, gr.update()
+                    elif action == "done":
+                        if conversions.runs.get(session) is not run or run.cancelled:
+                            return
+                        yield gr.update(value="下载图床版 MD", interactive=True), "<small>已完成，点击可再次下载</small>", gr.update(value=str(payload), visible=True)
+                        return
+                    else:
+                        raise payload
+            except Exception as exc:
+                logger.warning("EasyImages export failed: {}", type(exc).__name__)
+                yield gr.update(value="重试上传", interactive=True), f"<small>上传失败：{html.escape(str(exc))}</small>", gr.update(value=None, visible=False)
+
+        image_host_safe_handler.__annotations__["request"] = gr.Request
+        active_run_id.change(
+            fn=lambda run_id: gr.update(interactive=bool(run_id) and image_host_configured()),
+            inputs=active_run_id, outputs=image_host_button, queue=False, api_visibility="private",
+        )
+        gr.on(
+            triggers=[input_file.change, clear_button.click, convert_button.click],
+            fn=lambda: (gr.update(value="生成图床版 MD", interactive=False), "<small>等待转换完成</small>", gr.update(value=None, visible=False)),
+            inputs=[], outputs=[image_host_button, image_host_status, image_host_file], queue=False, api_visibility="private",
+        )
+        image_host_button.click(
+            fn=image_host_safe_handler, inputs=[artifact_state],
+            outputs=[image_host_button, image_host_status, image_host_file],
+            queue=True, concurrency_limit=1, concurrency_id="mineru-image-host",
+            show_progress="hidden", api_visibility="private",
+        )
+        image_host_file.change(
+            fn=None, inputs=image_host_file, outputs=[],
+            js="(file) => { if (file?.url) { const a=document.createElement('a'); a.href=file.url; a.download=file.orig_name || 'markdown.md'; document.body.appendChild(a); a.click(); a.remove(); } return []; }",
+            queue=False, api_visibility="private",
+        )
 
         for format_name, label in _DOWNLOAD_FORMATS:
             begin_download = download_buttons[format_name].click(

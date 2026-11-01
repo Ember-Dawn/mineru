@@ -42,9 +42,17 @@ WebUI 并不是额外的模型推理服务；`--api-url` 将请求发送给 Rout
 - **WebUI 独立 GPU 推理**：当前没有必要，会造成重复模型占用。
 - **源码目录直接保存模型**：当前选用 BuildKit 的跨构建缓存及最终镜像打包模型；用户决定暂时不迁移到项目目录。
 
+## 已知 WebUI 下载风险
+
+`mineru/kit/gradio/app.py` 下载回调结合 Gradio State 和 SessionConversions 的 `run.artifacts`；`mineru/kit/gradio/artifacts.py:RunArtifacts.from_state()` 在 state 非 dict 时抛出 `No parsed document is available`。曾出现预览正常但 Markdown / JSON 下载失败；**只是定位到错误路径，未证实根因**。不得把会话取消问题写成已解决事实。
+
 ## 修改时首要检查
 
 - `kit/main.py` 的实际命令注册和 `kit/commands/api_server.py` 是否一致。
 - `parser/api_server.py` 的 JobStore 活动状态是否覆盖所有任务完成/取消路径。
 - `model/vlm/runtime.py` 中卸载函数是否仍支持释放后再次加载。
 - Router 真实健康检查和 WebUI API 连接是否正常。
+
+## Optional EasyImages post-processing
+
+The Gradio WebUI alone reads the materialized `markdown.md` and `images/` of the current run, uploads referenced images to the configured EasyImages HTTP endpoint, and writes a separate downloadable `.md` under `downloads/`. Router and Worker do not receive the token and inference/model code is untouched.

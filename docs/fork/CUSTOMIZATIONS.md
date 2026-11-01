@@ -82,3 +82,13 @@
 ## 维护规则
 
 每次新增或修改定制，更新上述对应章节的文件列表、配置、验证状态及升级风险。删除定制时明确注明该行为已由官方接管或不再需要。历史细节可通过 Git 提交记录查询。
+
+## 5. Gradio EasyImages Markdown export
+
+**Purpose**: optional export of a standalone Markdown file with hosted image URLs, without modifying the parsed Markdown or image assets.
+
+- Files: `mineru/kit/gradio/image_host.py`, `mineru/kit/gradio/app.py`, `docker-compose.yml`, `.env.example`, related tests and WebUI docs.
+- Configuration: `EASYIMAGES_API_URL` is the HTTPS site root; `EASYIMAGES_TOKEN` is server-side only, injected into `mineru-webui`.
+- Behavior: user-initiated; images referenced by Markdown are uploaded serially with a shared 0.6-second start interval, retry on transient errors, per-run success cache, then standalone MD download.
+- Validation: lightweight local checks only; real Cloudflare/EasyImages integration and browser interaction require deployment testing.
+- Upgrade risk: low to medium; review Gradio event/state APIs when syncing upstream.
