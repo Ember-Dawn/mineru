@@ -1279,7 +1279,18 @@ def build_gradio_app(
         )
         image_host_file.change(
             fn=None, inputs=image_host_file, outputs=[],
-            js="(file) => { if (file?.url) { const a=document.createElement('a'); a.href=file.url; a.download=file.orig_name || 'markdown.md'; document.body.appendChild(a); a.click(); a.remove(); } return []; }",
+            # Debounce duplicate file-change notifications without preventing future manual downloads.
+            js=(
+                "(file) => { "
+                "if (!file?.url) return []; "
+                "const key = file.url; const now = Date.now(); "
+                "const last = window.__mineruImageHostDownload; "
+                "if (last?.key === key && now - last.at < 2000) return []; "
+                "window.__mineruImageHostDownload = {key, at: now}; "
+                "const a = document.createElement('a'); a.href = key; "
+                "a.download = file.orig_name || 'markdown.md'; "
+                "document.body.appendChild(a); a.click(); a.remove(); return []; }"
+            ),
             queue=False, api_visibility="private",
         )
 

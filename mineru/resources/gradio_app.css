@@ -253,19 +253,32 @@ body.dark .gradio-container {
     line-height: 1.4;
     color: var(--body-text-color);
 }
-.mineru-image-host-button {
+.mineru-image-host .mineru-image-host-button {
     width: 100% !important;
     margin: 0 !important;
-    min-height: 34px !important;
+    min-height: 38px !important;
+    padding: 6px 10px !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    line-height: 1.4 !important;
 }
-.mineru-image-host button.mineru-image-host-button:not(:disabled) {
+/* Gradio may attach elem_classes to the button itself or to a wrapper. */
+.mineru-image-host button.mineru-image-host-button:not(:disabled),
+.mineru-image-host .mineru-image-host-button button:not(:disabled) {
     background: var(--mineru-accent) !important;
-    border-color: var(--mineru-accent) !important;
+    border: 1px solid var(--mineru-accent) !important;
     color: #fff !important;
     -webkit-text-fill-color: #fff !important;
 }
-.mineru-image-host button.mineru-image-host-button:disabled {
+.mineru-image-host button.mineru-image-host-button:disabled,
+.mineru-image-host .mineru-image-host-button button:disabled {
     opacity: 0.55;
+}
+.mineru-image-host .mineru-image-host-button *,
+.mineru-image-host button.mineru-image-host-button * {
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
 }
 .mineru-image-host-status {
     color: var(--body-text-color-subdued);
