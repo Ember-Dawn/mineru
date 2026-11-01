@@ -418,7 +418,6 @@ def build_gradio_app(
                     type="filepath",
                     elem_classes=["mineru-upload-file"],
                 )
-                pending_list = gr.HTML(value="", elem_classes=["mineru-upload-pending"], apply_default_css=False)
                 # The original single-file preview chain stays isolated from list-valued uploads.
                 input_file = gr.File(
                     visible=False,
@@ -639,7 +638,6 @@ def build_gradio_app(
             [
                 batch_upload,
                 input_file,
-                pending_list,
                 page_range,
                 force_ocr,
                 html_output,
@@ -717,16 +715,15 @@ def build_gradio_app(
             paths = pending_uploads.get(session, [])
             first = paths[0] if paths else None
             label = "批量转换" if len(paths) > 1 else "转换"
-            summary = (f'<div class="mineru-pending-title">待处理文件：{len(paths)} 个</div>'
-                       + ''.join(f'<div>{html.escape(Path(p).name)}</div>' for p in paths)) if paths else ""
+
             return (gr.update(value=list(paths)), gr.update(value=first),
                     gr.update(value=label, interactive=bool(paths)),
-                    gr.update(value=""), gr.update(interactive=False), "", str(len(paths)), summary)
+                    gr.update(value=""), gr.update(interactive=False), "", str(len(paths)))
 
         def sync_uploaded_files(files: list[str] | None, request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
-                return tuple(gr.skip() for _ in range(8))
+                return tuple(gr.skip() for _ in range(7))
             selected_jobs.pop(session, None)
             merged = pending_uploads.setdefault(session, [])
             # Gradio's File.upload reports the currently selected files; it may
@@ -750,7 +747,7 @@ def build_gradio_app(
         def sync_deleted_file(event: gr.DeletedFileData, request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
-                return tuple(gr.skip() for _ in range(8))
+                return tuple(gr.skip() for _ in range(7))
             selected_jobs.pop(session, None)
             deleted = str(event.file.path)
             pending_uploads[session] = [path for path in pending_uploads.get(session, []) if path != deleted]
@@ -759,7 +756,7 @@ def build_gradio_app(
         def sync_cleared_files(request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
-                return tuple(gr.skip() for _ in range(8))
+                return tuple(gr.skip() for _ in range(7))
             pending_uploads.pop(session, None)
             selected_jobs.pop(session, None)
             return _sync_pending_view(session)
@@ -768,7 +765,7 @@ def build_gradio_app(
             callback.__annotations__["request"] = gr.Request
         sync_deleted_file.__annotations__["event"] = gr.DeletedFileData
         upload_outputs = [batch_upload, input_file, convert_button, batch_status,
-                          batch_zip_button, active_run_id, batch_count, pending_list]
+                          batch_zip_button, active_run_id, batch_count]
         batch_upload.upload(fn=sync_uploaded_files, inputs=batch_upload, outputs=upload_outputs,
                             queue=False, api_visibility="private")
         batch_upload.delete(fn=sync_deleted_file, inputs=[], outputs=upload_outputs,
@@ -1137,21 +1134,37 @@ def build_gradio_app(
             conversions.revisions.pop(getattr(request, "session_hash", "") or "", None)
 
         def batch_summary(job: Any) -> str:
+            """One horizontal bar for completed files; file phases live in the main status card."""
             if len(job.files) <= 1:
                 return ""
             completed = sum(item.status == "completed" for item in job.files)
             failed = [item for item in job.files if item.status == "failed"]
             processed = completed + len(failed)
             total = len(job.files)
-            percent = min(100, processed * 100 / total)
-            result = (f'<div class="mineru-batch-progress-title"><span>批量进度</span><span>{processed} / {total}</span></div>'
-                      f'<div class="mineru-batch-progress-track"><div class="mineru-batch-progress-fill" '
-                      f'style="width:{percent:.1f}%"></div></div>'
-                      f'<div class="mineru-batch-count">成功 {completed} · 失败 {len(failed)}</div>')
+            pct = min(100.0, processed * 100.0 / total)
+            current = next(((i, item) for i, item in enumerate(job.files, 1)
+                            if item.status == "running"), None)
+            headline = (f'<div class="mineru-batch-current">第 {current[0]}/{total} 个：'
+                        f'{html.escape(Path(current[1].source).name)}</div>') if current else ""
+            output = (headline
+                      + '<div class="mineru-batch-progress-line">'
+                      + f'<div class="mineru-batch-progress-track"><div class="mineru-batch-progress-fill" '
+                        f'style="width:{pct:.1f}%"></div></div>'
+                      + f'<span class="mineru-batch-progress-numbers">{processed}/{total}</span></div>')
             for item in failed:
-                result += (f'<div class="mineru-batch-error">{html.escape(Path(item.source).name)} · '
+                output += (f'<div class="mineru-batch-error">{html.escape(Path(item.source).name)} · '
                            f'失败：{html.escape(item.error or "解析失败")}</div>')
-            return result
+            return output
+
+        def batch_status_html(job: Any, run: ConversionRun) -> str:
+            """Display final batch counts in the original status message, not a second block."""
+            rendered = run.state.render()
+            if len(job.files) <= 1 or not run.terminal:
+                return rendered
+            completed = sum(item.status == "completed" for item in job.files)
+            failed = sum(item.status == "failed" for item in job.files)
+            return rendered.replace('</div></div>',
+                                    html.escape(f' · 成功 {completed} · 失败 {failed}') + '</div></div>', 1)
 
         async def convert_ui(
             file_path: str | None,
@@ -1196,12 +1209,25 @@ def build_gradio_app(
                 else:
                     async def process_batch() -> tuple[Any, ...]:
                         last_result: tuple[Any, ...] | None = None
+                        active_child: list[ConversionRun | None] = [None]
                         for index, item in enumerate(job.files, 1):
                             if run.cancelled:
                                 break
                             item.status = "running"
                             run.publish(f"批量解析 {index}/{len(paths)}：{Path(item.source).name}")
                             child = ConversionRun(uuid.uuid4().hex)
+                            active_child[0] = child
+                            original_publish = child.publish
+                            def publish_child(message: str | ParseStatusUpdate, *, at: float | None = None,
+                                              final_failure: bool = False, _child: ConversionRun = child,
+                                              _publish: Any = original_publish) -> None:
+                                _publish(message, at=at, final_failure=final_failure)
+                                # A file's terminal status must not end the whole batch.
+                                if (not run.cancelled and not run.terminal
+                                        and active_child[0] is _child and not _child.terminal):
+                                    run.publish(message, at=at)
+                            child.publish = publish_child  # type: ignore[method-assign]
+                            run.publish(STATUS_PREPARING_REQUEST)
                             try:
                                 outcome = await execute_conversion(child, item.source, tier_position, "", force_ocr, request)
                                 if child.artifacts:
@@ -1215,11 +1241,16 @@ def build_gradio_app(
                             except Exception as error:
                                 item.status = "failed"
                                 item.error = str(error)
+                        active_child[0] = None
                         run.publish(STATUS_COMPLETED)
+                        run.snapshot = json.dumps({
+                            "run_id": run.run_id, "sequence": run.state.sequence,
+                            "terminal": True, "html": batch_status_html(job, run)
+                        }, ensure_ascii=False)
                         if last_result is not None:
-                            return (run.state.render(), *last_result[1:])
+                            return (batch_status_html(job, run), *last_result[1:])
                         return (
-                            run.state.render(), "", _pdf_preview_update(gr, None),
+                            batch_status_html(job, run), "", _pdf_preview_update(gr, None),
                             gr.update(value=None, visible=False),
                             gr.update(value="", visible=False),
                             gr.update(value=preview_placeholder("empty_preview"), visible=True),
