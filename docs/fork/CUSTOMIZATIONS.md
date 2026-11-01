@@ -92,3 +92,15 @@
 - Behavior: user-initiated; images referenced by Markdown are uploaded serially with a shared 0.6-second start interval, retry on transient errors, per-run success cache, then standalone MD download.
 - Validation: lightweight local checks only; real Cloudflare/EasyImages integration and browser interaction require deployment testing.
 - Upgrade risk: low to medium; review Gradio event/state APIs when syncing upstream.
+
+## 6. Docker model-base build and WebUI development mount
+
+**Purpose**: decouple expensive model preparation from ordinary application-source edits; let Gradio updates load after a WebUI restart without rebuilding.
+
+- `Dockerfile.models` contains the original full model-preparation build and produces `mineru:model-base` (one-time / explicit refresh).
+- `Dockerfile` inherits `mineru:model-base`, copies application source, and installs the local package with `--no-deps`.
+- `docker-compose.dev.yml` bind-mounts `./mineru` into WebUI only; `PYTHONPATH=/opt/mineru-source` ensures Python imports mounted code. The Router remains isolated from development edits.
+- Initial migration: after the *previous* full build finishes successfully, use `docker image tag mineru:local mineru:model-base` before rebuilding `mineru:local`. If no compatible old image exists, build the base explicitly using `docker build -f Dockerfile.models -t mineru:model-base .`.
+- Model or third-party dependency updates require an explicit base-image rebuild, followed by application image rebuild and the necessary container recreation. Do not mistake a source-only build for a dependency/model update.
+- Verification: static Compose/Dockerfile checks only in this patch; actual image build, module import path and Docker restart need host-side validation.
+- Upgrade risk: medium; verify package/requirements and model registry compatibility whenever upstream MinerU changes.

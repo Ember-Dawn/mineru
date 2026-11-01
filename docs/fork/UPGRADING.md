@@ -45,3 +45,10 @@ Fork 曾以 `mineru-4.0.12-released` 作为起点；之后是否仍对应此版�
 ## AI 协作交付
 
 用户主要采用 AI 辅助维护，并通过 git-bridge 完成同步。需要交付文件时，使用包含完整改动文件的增量 ZIP，仓库相对路径放在 `payload/`；仅删除、改名、移动旧文件时使用 ZIP 根目录的 `__delete__.txt`。
+
+## 双镜像构建与开发模式注意事项
+
+- `Dockerfile.models` 是模型、系统和 Python 依赖的固定基础。升级上游依赖、模型注册表或下载逻辑时，必须重新构建 `mineru:model-base`，不能只重建普通应用镜像。
+- 普通 `Dockerfile` 使用 `--no-deps` 安装当前源码；这是刻意的快速构建边界，要求基础镜像内依赖与当前 `pyproject.toml` 兼容。
+- 开发用 `docker-compose.dev.yml` 只覆盖 WebUI 的代码导入路径。发布/验证完整镜像时不使用该 override。
+- 更新基础镜像后重建应用镜像并重新创建目标容器；`restart` 不会让旧容器加载新镜像。

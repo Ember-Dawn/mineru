@@ -1,0 +1,9 @@
+# Development-only override: bind-mount the Gradio/MinerU Python package into WebUI.
+# Use together with docker-compose.yml; do not run this override on its own.
+services:
+  mineru-webui:
+    volumes:
+      - ./mineru:/opt/mineru-source/mineru:ro
+    environment:
+      # Prioritize the bind-mounted tree over the installed package in site-packages.
+      PYTHONPATH: /opt/mineru-source
