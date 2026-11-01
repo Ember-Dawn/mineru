@@ -68,13 +68,13 @@
     const start = Math.min(state.handle_a, state.handle_b);
     const end = Math.max(state.handle_a, state.handle_b);
     const selected = end - start + 1;
-    const limitText = maxPages === null ? text("page_unlimited") : text("page_limit", { count: maxPages });
+    const limitText = maxPages === null ? "" : text("page_limit", { count: maxPages });
     const selectionText = count ? `[${start}-${end}] · ${text("page_count", { count: selected })}`
         : text(state.error ? "page_read_failed" : "reading_pages");
     const summary = `<div class="mineru-page-values" data-range-visible="${visible}" data-start-handle="${state.start_handle}">`
         + `<span class="mineru-page-selection">${selectionText}</span>`
         + `</div>`
-        + `<div class="mineru-page-axis"><span>1</span><span>${limitText}</span><span>${count || "–"}</span></div>`;
+        + `<div class="mineru-page-axis"><span>1</span>${limitText ? `<span>${limitText}</span>` : ""}<span>${count || "–"}</span></div>`;
     const notice = flashUnavailable ? text("flash_unavailable")
         : needsRange && !count ? message(state.error) : "";
     const range = needsRange && count ? (start === end ? String(start) : `${start}-${end}`) : "";

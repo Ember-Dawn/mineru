@@ -506,16 +506,12 @@ def build_gradio_app(
                 with gr.Column(elem_classes=["mineru-combined-status"]):
                     status_panel = gr.HTML(_status_html(), elem_classes=["mineru-status-panel"])
                     batch_status = gr.HTML(value="", elem_classes=["mineru-batch-status"])
-                batch_zip_button = gr.Button(i18n("mineru.batch_zip"), interactive=False, size="sm",
-                                             elem_classes=["mineru-batch-zip-button"])
+                    with gr.Row(elem_classes=["mineru-batch-zip-row"]):
+                        batch_zip_button = gr.Button(i18n("mineru.batch_zip"), interactive=False, size="sm",
+                                                     elem_classes=["mineru-batch-zip-button"])
                 batch_zip_file = gr.File(visible=False, interactive=False)
                 batch_zip_receipt = gr.Textbox(value="", visible=False)
                 with gr.Column(elem_classes=["mineru-image-host"]):
-                    gr.HTML(
-                        value=f'<div class="mineru-image-host-title">{localized_text("image_host_title")}</div>',
-                        elem_classes=["mineru-image-host-heading"],
-                        apply_default_css=False,
-                    )
                     image_host_button = gr.Button(
                         i18n("mineru.image_host_generate"),
                         variant="primary",
@@ -717,43 +713,68 @@ def build_gradio_app(
         update_file_preview.__annotations__["request"] = gr.Request
         private_event_kwargs = {"queue": False, "api_visibility": "private"}
 
-        def sync_upload(files: list[str] | None, request: object | None = None) -> tuple[Any, ...]:
-            session = getattr(request, "session_hash", "") or ""
-            if batches.busy(session):
-                return tuple(gr.skip() for _ in range(7))
-            selected_jobs.pop(session, None)
-            incoming = list(files or [])
-            if not incoming:
-                pending_uploads.pop(session, None)
-            else:
-                merged = pending_uploads.setdefault(session, [])
-                seen = set()
-                for previous in merged:
-                    p = Path(previous)
-                    if p.is_file():
-                        seen.add((p.name, p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest()))
-                for name in incoming:
-                    p = Path(name)
-                    if not p.is_file():
-                        continue
-                    identity = (p.name, p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest())
-                    if identity not in seen:
-                        merged.append(str(p))
-                        seen.add(identity)
+        def _sync_pending_view(session: str) -> tuple[Any, ...]:
             paths = pending_uploads.get(session, [])
             first = paths[0] if paths else None
             label = "批量转换" if len(paths) > 1 else "转换"
             summary = (f'<div class="mineru-pending-title">待处理文件：{len(paths)} 个</div>'
                        + ''.join(f'<div>{html.escape(Path(p).name)}</div>' for p in paths)) if paths else ""
-            return (gr.update(value=first), gr.update(value=label, interactive=bool(paths)),
+            return (gr.update(value=list(paths)), gr.update(value=first),
+                    gr.update(value=label, interactive=bool(paths)),
                     gr.update(value=""), gr.update(interactive=False), "", str(len(paths)), summary)
 
-        sync_upload.__annotations__["request"] = gr.Request
-        batch_upload.change(
-            fn=sync_upload, inputs=batch_upload,
-            outputs=[input_file, convert_button, batch_status, batch_zip_button, active_run_id, batch_count, pending_list],
-            queue=False, api_visibility="private",
-        )
+        def sync_uploaded_files(files: list[str] | None, request: object | None = None) -> tuple[Any, ...]:
+            session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return tuple(gr.skip() for _ in range(8))
+            selected_jobs.pop(session, None)
+            merged = pending_uploads.setdefault(session, [])
+            # Gradio's File.upload reports the currently selected files; it may
+            # replace the visible list on a second selection. The server's
+            # accumulated list is the source of truth, not File.change.
+            fingerprints: set[tuple[str, int, str]] = set()
+            for name in merged:
+                path = Path(name)
+                if path.is_file():
+                    fingerprints.add((path.name, path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest()))
+            for name in files or []:
+                path = Path(name)
+                if not path.is_file():
+                    continue
+                signature = (path.name, path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest())
+                if signature not in fingerprints:
+                    merged.append(str(path))
+                    fingerprints.add(signature)
+            return _sync_pending_view(session)
+
+        def sync_deleted_file(event: gr.DeletedFileData, request: object | None = None) -> tuple[Any, ...]:
+            session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return tuple(gr.skip() for _ in range(8))
+            selected_jobs.pop(session, None)
+            deleted = str(event.file.path)
+            pending_uploads[session] = [path for path in pending_uploads.get(session, []) if path != deleted]
+            return _sync_pending_view(session)
+
+        def sync_cleared_files(request: object | None = None) -> tuple[Any, ...]:
+            session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return tuple(gr.skip() for _ in range(8))
+            pending_uploads.pop(session, None)
+            selected_jobs.pop(session, None)
+            return _sync_pending_view(session)
+
+        for callback in (sync_uploaded_files, sync_deleted_file, sync_cleared_files):
+            callback.__annotations__["request"] = gr.Request
+        sync_deleted_file.__annotations__["event"] = gr.DeletedFileData
+        upload_outputs = [batch_upload, input_file, convert_button, batch_status,
+                          batch_zip_button, active_run_id, batch_count, pending_list]
+        batch_upload.upload(fn=sync_uploaded_files, inputs=batch_upload, outputs=upload_outputs,
+                            queue=False, api_visibility="private")
+        batch_upload.delete(fn=sync_deleted_file, inputs=[], outputs=upload_outputs,
+                            queue=False, api_visibility="private")
+        batch_upload.clear(fn=sync_cleared_files, inputs=[], outputs=upload_outputs,
+                           queue=False, api_visibility="private")
 
         def reset_pending_on_clear(request: object | None = None) -> None:
             session = getattr(request, "session_hash", "") or ""

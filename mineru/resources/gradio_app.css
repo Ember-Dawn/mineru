@@ -525,3 +525,10 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 .mineru-history-buttons { gap:8px !important; }
 .mineru-history-buttons button { flex:1 1 0; min-width:0; }
 .mineru-kit-control:has(.mineru-batch-count-marker[data-batch="true"]) .mineru-kit-page-range { display:none !important; }
+
+/* ZIP export lives inside the status panel as a compact secondary action. */
+.mineru-combined-status .mineru-batch-zip-row { justify-content:flex-end !important; padding:0 12px 12px !important; margin:0 !important; background:transparent !important; border:0 !important; }
+.mineru-combined-status .mineru-batch-zip-button { width:auto !important; flex:0 0 auto !important; min-width:100px !important; min-height:32px !important; height:34px !important; padding:4px 14px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }
+
+.mineru-combined-status .mineru-batch-zip-row { justify-content:flex-end !important; padding:0 12px 12px !important; margin:0 !important; background:transparent !important; border:0 !important; }
+.mineru-combined-status .mineru-batch-zip-button { width:auto !important; flex:0 0 auto !important; min-width:100px !important; min-height:32px !important; height:34px !important; padding:4px 14px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }
