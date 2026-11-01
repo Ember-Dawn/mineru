@@ -162,7 +162,7 @@ def generate(artifacts: RunArtifacts, *, allowed_root: Path, progress: Callable[
     markdown = artifacts.markdown_path.read_text(encoding="utf-8")
     spans, images = _references(markdown, root)
     cache_path = artifacts.downloads_dir / "easyimages_upload_state.json"
-    output = artifacts.downloads_dir / f"{artifacts.stem}_easyimages.md"
+    output = artifacts.downloads_dir / f"{artifacts.stem}.md"
     try:
         cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.is_file() else {}
     except (OSError, ValueError):
