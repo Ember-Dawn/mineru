@@ -121,8 +121,12 @@ services:
       - "9091:7860"
     environment:
       MINERU_MODEL_SOURCE: local
+      PYTHONPATH: /opt/mineru-source
       EASYIMAGES_API_URL: ${EASYIMAGES_API_URL:-}
       EASYIMAGES_TOKEN: ${EASYIMAGES_TOKEN:-}
+    # Default development mode: WebUI imports the mounted Python source.
+    volumes:
+      - ./mineru:/opt/mineru-source/mineru:ro
     entrypoint: ["mineru-kit"]
     command:
       - webui

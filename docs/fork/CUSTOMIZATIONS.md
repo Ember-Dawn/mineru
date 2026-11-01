@@ -79,10 +79,6 @@
 
 **升级风险：中**。检查官方模型路径、模型下载 CLI、镜像基础层及缓存迁移。
 
-## 维护规则
-
-每次新增或修改定制，更新上述对应章节的文件列表、配置、验证状态及升级风险。删除定制时明确注明该行为已由官方接管或不再需要。历史细节可通过 Git 提交记录查询。
-
 ## 5. Gradio EasyImages Markdown export
 
 **Purpose**: optional export of a standalone Markdown file with hosted image URLs, without modifying the parsed Markdown or image assets.
@@ -93,14 +89,21 @@
 - Validation: lightweight local checks only; real Cloudflare/EasyImages integration and browser interaction require deployment testing.
 - Upgrade risk: low to medium; review Gradio event/state APIs when syncing upstream.
 
-## 6. Docker model-base build and WebUI development mount
+## 6. 单 Dockerfile 与默认 WebUI 源码挂载
 
-**Purpose**: decouple expensive model preparation from ordinary application-source edits; let Gradio updates load after a WebUI restart without rebuilding.
+**目的**：恢复完整单镜像构建，简化个人开发环境；Gradio 源码修改后仅重启 WebUI，不重复构建 GPU 镜像。
 
-- `Dockerfile.models` contains the original full model-preparation build and produces `mineru:model-base` (one-time / explicit refresh).
-- `Dockerfile` inherits `mineru:model-base`, copies application source, and installs the local package with `--no-deps`.
-- `docker-compose.dev.yml` bind-mounts `./mineru` into WebUI only; `PYTHONPATH=/opt/mineru-source` ensures Python imports mounted code. The Router remains isolated from development edits.
-- Initial migration: after the *previous* full build finishes successfully, use `docker image tag mineru:local mineru:model-base` before rebuilding `mineru:local`. If no compatible old image exists, build the base explicitly using `docker build -f Dockerfile.models -t mineru:model-base .`.
-- Model or third-party dependency updates require an explicit base-image rebuild, followed by application image rebuild and the necessary container recreation. Do not mistake a source-only build for a dependency/model update.
-- Verification: static Compose/Dockerfile checks only in this patch; actual image build, module import path and Docker restart need host-side validation.
-- Upgrade risk: medium; verify package/requirements and model registry compatibility whenever upstream MinerU changes.
+- `Dockerfile`：使用 vLLM 基础镜像，安装 MinerU 及 Torch 依赖，执行 Standard/Torch/vLLM 模型准备，保留 `mineru-standard-models` 与 `mineru-hf-xet` BuildKit 缓存；复制模型到最终镜像的 `/root/.mineru/models`。
+- `docker-compose.yml`：只给 `mineru-webui` 挂载 `./mineru:/opt/mineru-source/mineru:ro`，并设置 `PYTHONPATH=/opt/mineru-source`；Router/Worker 始终使用镜像内源码。
+- `mineru/kit/commands/models.py`：模型下载 CLI 传入 `reuse_ready=True`，已满足本地就绪条件的模型仓库可直接复用。
+- 删除此前引入的 `Dockerfile.models` 与 `docker-compose.dev.yml`，不再需要 `mineru:model-base`。
+
+**使用**：切换方案时重新构建完整 `mineru:local` 并重新创建容器；之后仅改 Gradio/图床 Python 源码，运行 `docker compose restart mineru-webui`。依赖、模型或 Router/Worker 变更仍需重建镜像及对应容器。
+
+**边界**：`COPY .` 仍在模型下载之前，源码变化会使其构建层重新执行；BuildKit 缓存及 `reuse_ready=True` 只是减轻重复下载。`reuse_ready=True` 使用本地完成标记/必要路径验证，不等于完整哈希校验，亦不会自动检查远端权重更新；主动升级模型时必须制定刷新方案。
+
+**验证**：已执行轻量 Python 语法、Compose YAML 和 ZIP 完整性检查；实际 Docker 构建、挂载导入路径及 GPU 推理需在服务器验证。升级风险中等。
+
+## 维护规则
+
+每次修改定制，更新涉及文件、配置、实测结论和升级风险；不要把未执行的实机测试标成已通过。

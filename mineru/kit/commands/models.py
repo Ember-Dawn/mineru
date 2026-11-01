@@ -105,7 +105,7 @@ def download_cmd(
 
     for target_repo in repos:
         try:
-            root = download_model_repo(target_repo, source=normalized_source, local_as_auto=True)
+            root = download_model_repo(target_repo, source=normalized_source, local_as_auto=True, reuse_ready=True)
         except Exception as exc:
             exit_with_message("api_error", t("Failed to download {repo}: {error}", repo=target_repo.name, error=exc))
         if verbose:
