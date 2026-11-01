@@ -30,6 +30,7 @@ from ...types import TIERS, Tier
 from ...utils.logger import configure_global_log_level
 from ...utils.stdio import configure_standard_streams
 from .artifacts import RunArtifacts, persist_parse_result, render_download, render_html_preview
+from .batch import BatchRegistry, archive_job
 from .image_host import configured as image_host_configured, generate as generate_image_host_markdown
 from .client import (
     GradioArtifactClient,
@@ -396,6 +397,8 @@ def build_gradio_app(
     )
     # 等待限制放在生成器内部，使其他会话也能立即显示本地排队状态。
     conversions = SessionConversions()
+    batches = BatchRegistry()
+    selected_jobs: dict[str, str] = {}
 
     with gr.Blocks() as demo:
         gr.HTML(
@@ -404,7 +407,17 @@ def build_gradio_app(
         )
         with gr.Row(elem_classes=["mineru-kit-workspace"]):
             with gr.Column(scale=2, min_width=280, elem_classes=["mineru-kit-control", "mineru-control-column"]):
+                batch_upload = gr.File(
+                    label=i18n("mineru.upload"),
+                    file_types=file_types,
+                    file_count="multiple",
+                    type="filepath",
+                    elem_classes=["mineru-upload-file"],
+                )
+                # The original single-file preview chain stays isolated from list-valued uploads.
                 input_file = gr.File(
+                    visible=False,
+                    show_label=False,
                     label=i18n("mineru.upload"),
                     file_types=file_types,
                     file_count="single",
@@ -486,6 +499,12 @@ def build_gradio_app(
                     )
                     clear_button = gr.ClearButton(value=i18n("mineru.clear"), scale=1, min_width=1)
                 status_panel = gr.HTML(_status_html(), elem_classes=["mineru-status-panel"])
+                batch_status = gr.HTML(value="", elem_classes=["mineru-batch-status"])
+                with gr.Column(elem_classes=["mineru-batch-actions"]):
+                    gr.Markdown(i18n("mineru.batch_results"), container=False)
+                    batch_zip_button = gr.Button(i18n("mineru.batch_zip"), interactive=False, size="sm")
+                    batch_zip_file = gr.File(visible=False, interactive=False)
+                    batch_zip_receipt = gr.Textbox(value="", visible=False)
                 with gr.Column(elem_classes=["mineru-image-host"]):
                     gr.HTML(
                         value=f'<div class="mineru-image-host-title">{localized_text("image_host_title")}</div>',
@@ -505,6 +524,14 @@ def build_gradio_app(
                         apply_default_css=False,
                     )
                     image_host_file = gr.File(visible=False, interactive=False, show_label=False)
+                    image_host_download_token = gr.Textbox(value="", visible=False)
+                with gr.Accordion(i18n("mineru.history_title"), open=False):
+                    history_choices = gr.Dropdown(choices=[], label=i18n("mineru.history_list"), interactive=True)
+                    with gr.Row():
+                        history_refresh = gr.Button(i18n("mineru.history_refresh"), size="sm")
+                        history_restore = gr.Button(i18n("mineru.history_restore"), size="sm")
+                        history_clear = gr.Button(i18n("mineru.history_clear"), size="sm")
+                    history_notice = gr.Markdown("")
 
                 if examples:
                     gr.Examples(
@@ -592,6 +619,7 @@ def build_gradio_app(
                             )
                 download_notice = gr.HTML(value="", elem_classes=["mineru-kit-download-notice"])
 
+        batch_count = gr.Textbox(value="0", visible=False)
         artifact_state = gr.State(value=None)
         active_run_id = gr.Textbox(value="", visible=False)
         conversion_ticket = gr.Textbox(value="", visible=False)
@@ -605,6 +633,7 @@ def build_gradio_app(
         download_receipts = {name: gr.Textbox(value="", visible=False) for name, _label in _DOWNLOAD_FORMATS}
         clear_button.add(
             [
+                batch_upload,
                 input_file,
                 page_range,
                 force_ocr,
@@ -678,6 +707,24 @@ def build_gradio_app(
         # 保持公开输入只有文件，访问地址由 Gradio 的请求上下文注入。
         update_file_preview.__annotations__["request"] = gr.Request
         private_event_kwargs = {"queue": False, "api_visibility": "private"}
+
+        def sync_upload(files: list[str] | None, request: object | None = None) -> tuple[Any, ...]:
+            session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return tuple(gr.skip() for _ in range(6))
+            selected_jobs.pop(session, None)
+            paths = list(files or [])
+            first = paths[0] if paths else None
+            label = "批量转换" if len(paths) > 1 else "转换"
+            return (gr.update(value=first), gr.update(value=label, interactive=bool(paths)),
+                    gr.update(value=""), gr.update(interactive=False), "", str(len(paths)))
+
+        sync_upload.__annotations__["request"] = gr.Request
+        batch_upload.change(
+            fn=sync_upload, inputs=batch_upload,
+            outputs=[input_file, convert_button, batch_status, batch_zip_button, active_run_id, batch_count],
+            queue=False, api_visibility="private",
+        )
 
         # 换文件和清除先在浏览器中撤销旧预览，文件输出仍由原有 Python 事件管理。
         input_file.change(fn=None, inputs=input_file, outputs=pdf_viewer, js=pdf_preview_js("reset"), **private_event_kwargs)
@@ -781,7 +828,10 @@ def build_gradio_app(
         ]
 
         # 文件页数只在上传后读取；前端缓存元数据，tier 切换和拖动不发起 Python 请求。
-        range_inputs = [input_file, tier, page_metadata, page_selection, page_handle_a, page_handle_b, tier_selection]
+        range_inputs = [
+            input_file, tier, page_metadata, page_selection,
+            page_handle_a, page_handle_b, tier_selection, batch_count,
+        ]
         range_outputs = [
             page_handle_a,
             page_handle_b,
@@ -797,7 +847,8 @@ def build_gradio_app(
         range_script = _resource_text("gradio_page_range.js")
         # 共用一个 always_last 事件流，避免文件、元数据、清除与拖动的并行回调互相覆盖。
         gr.on(
-            triggers=[input_file.change, tier.input, page_metadata.change, page_handle_a.input, page_handle_b.input],
+            triggers=[input_file.change, tier.input, page_metadata.change, page_handle_a.input, page_handle_b.input,
+                      batch_count.change],
             fn=None,
             inputs=range_inputs,
             outputs=range_outputs,
@@ -1002,6 +1053,11 @@ def build_gradio_app(
 
         async def cancel_ui_conversion(ticket: str, request: object | None = None) -> None:
             """只取消浏览器刚刚撤销的那次任务，避免晚到请求误伤新任务。"""
+            session = getattr(request, "session_hash", "") or ""
+            active = batches.jobs.get(batches.active.get(session, ""))
+            # A batch must not be cancelled by a late source-file event.
+            if active is not None and len(active.files) > 1:
+                return
             try:
                 identity = json.loads(ticket)
                 run_id = uuid.UUID(identity["run_id"]).hex
@@ -1023,6 +1079,13 @@ def build_gradio_app(
             await cancel_session_conversion(request)
             conversions.revisions.pop(getattr(request, "session_hash", "") or "", None)
 
+        def batch_summary(job: Any) -> str:
+            parts = [f"<div><b>{len(job.files)} 个文件 · 已完成 {sum(bool(i.artifacts) for i in job.files)}</b></div>"]
+            for item in job.files:
+                state = "完成" if item.artifacts else "失败"
+                parts.append(f"<div>{html.escape(Path(item.source).name)} · {state}</div>")
+            return "".join(parts)
+
         async def convert_ui(
             file_path: str | None,
             tier_position: int | float,
@@ -1030,6 +1093,7 @@ def build_gradio_app(
             force_ocr: bool,
             ticket: str,
             request: object | None = None,
+            files: list[str] | None = None,
         ) -> str:
             """用完整回执传递浏览器结果，使迟到响应无法直接覆盖可见组件。"""
             from gradio.data_classes import FileData
@@ -1043,13 +1107,66 @@ def build_gradio_app(
             except (ValueError, TypeError, KeyError, AttributeError):
                 return ""
             session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return ""
+            paths = list(files or ([file_path] if file_path else []))
+            if not paths:
+                return ""
             run = conversions.start(session, run_id, revision=revision)
             if run is None:
                 return ""
-            result = await execute_conversion(run, file_path, tier_position, raw_page_range, force_ocr, request)
-            if conversions.current(session, run_id) is not run:
-                return ""
-            values = list(result)
+            job = batches.start(session, paths, tier_position, force_ocr, raw_page_range if len(paths) == 1 else "")
+            selected_jobs[session] = job.job_id
+            try:
+                if len(paths) == 1:
+                    result = await execute_conversion(run, paths[0], tier_position, raw_page_range, force_ocr, request)
+                    if run.artifacts:
+                        job.files[0].status = "completed"
+                        job.files[0].artifacts = run.artifacts
+                    else:
+                        job.files[0].status = "failed"
+                        job.files[0].error = run.state.message
+                else:
+                    async def process_batch() -> tuple[Any, ...]:
+                        last_result: tuple[Any, ...] | None = None
+                        for index, item in enumerate(job.files, 1):
+                            if run.cancelled:
+                                break
+                            item.status = "running"
+                            run.publish(f"批量解析 {index}/{len(paths)}：{Path(item.source).name}")
+                            child = ConversionRun(uuid.uuid4().hex)
+                            try:
+                                outcome = await execute_conversion(child, item.source, tier_position, "", force_ocr, request)
+                                if child.artifacts:
+                                    item.artifacts = child.artifacts
+                                    item.status = "completed"
+                                    last_result = outcome
+                                    run.artifacts = child.artifacts
+                                else:
+                                    item.status = "failed"
+                                    item.error = child.state.message
+                            except Exception as error:
+                                item.status = "failed"
+                                item.error = str(error)
+                        run.publish(STATUS_COMPLETED)
+                        if last_result is not None:
+                            return (run.state.render(), *last_result[1:])
+                        return (
+                            run.state.render(), "", _pdf_preview_update(gr, None),
+                            gr.update(value=None, visible=False),
+                            gr.update(value="", visible=False),
+                            gr.update(value=preview_placeholder("empty_preview"), visible=True),
+                            None, *_download_updates(gr, interactive=False), "",
+                        )
+                    root_task = asyncio.create_task(process_batch())
+                    run.task = root_task
+                    result = await root_task
+                    run.task = None
+                if conversions.current(session, run_id) is not run:
+                    return ""
+                values = list(result)
+            finally:
+                batches.end(session, job.job_id)
             # 文件来自输出根目录的不可变任务目录，使用现有 allowed_paths 文件路由。
             for index in (2, 3):
                 update = values[index]
@@ -1061,12 +1178,19 @@ def build_gradio_app(
                         **update,
                         "value": FileData(path=str(path), url=file_url, orig_name=path.name).model_dump(mode="json"),
                     }
+            job.receipt_outputs = values[:6] + values[7:]
+            job.current_artifacts = run.artifacts
             return json.dumps(
                 {
                     "run_id": run_id,
                     "sequence": run.state.sequence,
                     "ready_at": time.time(),
-                    "outputs": values[:6] + values[7:],
+                    "outputs": job.receipt_outputs,
+                    "batch_count": len(job.files),
+                    "batch_status": batch_summary(job),
+                    "can_host": bool(job.successful) and image_host_configured(),
+                    "hosted": bool(job.hosted_path and Path(job.hosted_path).is_file()),
+                    "history_choices": batches.choices(),
                 },
                 ensure_ascii=False,
             )
@@ -1077,18 +1201,24 @@ def build_gradio_app(
         convert_button.click(
             fn=None,
             inputs=[],
-            outputs=[*begin_conversion_outputs, conversion_ticket, status_poll, html_output, json_output],
+            outputs=[*begin_conversion_outputs, conversion_ticket, status_poll, html_output, json_output,
+                     clear_button, batch_upload, history_restore, batch_zip_button, history_clear,
+                     convert_button],
             js=(
                 f"() => {{ ({pdf_preview_js('begin')})(); "
                 f"const ticket = ({conversion_js('begin')})(); "
                 f"return [{json.dumps(_status_html(STATUS_PREPARING_REQUEST))}, "
-                f"...({download_js('reset')})(), ...ticket, '', '']; }}"
+                f"...({download_js('reset')})(), ...ticket, '', '', "
+                "{__type__:'update',interactive:false}, {__type__:'update',interactive:false}, "
+                "{__type__:'update',interactive:false}, {__type__:'update',interactive:false}, "
+                "{__type__:'update',interactive:false}, "
+                "{__type__:'update',interactive:false}]; }"
             ),
             **private_event_kwargs,
         )
         ui_convert_event = conversion_ticket.change(
             fn=convert_ui,
-            inputs=[input_file, tier, page_range, force_ocr, conversion_ticket],
+            inputs=[input_file, tier, page_range, force_ocr, conversion_ticket, batch_upload],
             outputs=conversion_receipt,
             queue=True,
             concurrency_limit=None,
@@ -1115,14 +1245,33 @@ def build_gradio_app(
         conversion_receipt.change(
             fn=None,
             inputs=[conversion_receipt, input_file, pdf_viewer_entry],
-            outputs=[*ui_result_outputs, pdf_viewer],
+            outputs=[*ui_result_outputs, pdf_viewer, clear_button, batch_upload, history_restore,
+                     batch_zip_button, batch_status, image_host_button, image_host_status, history_clear,
+                     history_choices, convert_button],
             js=(
                 "(receipt, source, viewer) => { "
                 f"const values = ({conversion_js('result')})(receipt); "
+                "const data = JSON.parse(receipt || '{}'); "
+                "if (data.restored && data.restore_source) { "
+                "const recovered = {path:data.restore_source, "
+                "url:window.location.origin+'/gradio_api/file='+encodeURI(data.restore_source)}; "
+                f"({pdf_preview_js('reset')})(recovered); ({pdf_preview_js('begin')})(); "
+                "source = recovered; } "
                 "const pdf = values[2]; "
                 f"const preview = pdf?.__type__ === 'update' && 'value' in pdf ? ({pdf_preview_js('result')})("
                 "pdf.value, source, viewer, values[6]) : {__type__: 'update'}; "
-                "return [...values, preview]; }"
+                "const hasResults = Boolean(typeof values[6] === 'string' ? values[6] : values[6]?.value); "
+                "const count = Number(data?.batch_count || 1); "
+                "return [...values, preview, {__type__:'update',interactive:true}, "
+                "{__type__:'update',interactive:true}, {__type__:'update',interactive:true}, "
+                "{__type__:'update',interactive:hasResults}, "
+                "data?.batch_status || '', "
+                "{__type__:'update',value:data.hosted?'下载图床版 MD':'生成图床版 MD', "
+                "interactive:Boolean(data.can_host)}, "
+                "data.hosted?'已完成，可再次下载':'', "
+                "{__type__:'update',interactive:true}, "
+                "{__type__:'update',choices:data.history_choices||[]}, "
+                "{__type__:'update',interactive:true,value:count>1?'批量转换':'转换'}]; }"
             ),
             **private_event_kwargs,
         )
@@ -1180,8 +1329,12 @@ def build_gradio_app(
             json_output,
         ]
 
-        def reset_ui() -> tuple[Any, ...]:
+        def reset_ui(request: object | None = None) -> tuple[Any, ...]:
             """清除当前任务结果并恢复空预览状态。"""
+            session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return tuple(gr.skip() for _ in reset_outputs)
+            selected_jobs.pop(session, None)
             return (
                 _status_html(_DEFAULT_STATUS),
                 "",
@@ -1194,9 +1347,90 @@ def build_gradio_app(
                 "",
             )
 
+        reset_ui.__annotations__["request"] = gr.Request
         clear_button.click(
-            fn=reset_ui, inputs=[], outputs=reset_outputs, cancels=[convert_event, ui_convert_event], **private_event_kwargs
+            fn=reset_ui, inputs=[], outputs=reset_outputs, **private_event_kwargs
         )
+
+        def current_job(session: str) -> Any:
+            job = batches.jobs.get(selected_jobs.get(session, ""))
+            if job is None or job.running:
+                raise ValueError("No completed task available")
+            return job
+
+        def prepare_batch_zip(request: object | None = None) -> tuple[Any, str]:
+            session = getattr(request, "session_hash", "") or ""
+            job = current_job(session)
+            artifacts = job.successful
+            if not artifacts:
+                raise ValueError("No successful results")
+            path = (Path(render_download(artifacts[0].as_state(), "markdown", allowed_root=output_root))
+                    if len(job.files) == 1 else archive_job(job, output_root=output_root, hosted=False))
+            return gr.update(value=str(path), visible=False), uuid.uuid4().hex
+
+        prepare_batch_zip.__annotations__["request"] = gr.Request
+        batch_zip_button.click(
+            fn=prepare_batch_zip, inputs=[], outputs=[batch_zip_file, batch_zip_receipt],
+            queue=True, show_progress="hidden", api_visibility="private",
+        )
+        batch_zip_receipt.change(
+            fn=None, inputs=[batch_zip_file, batch_zip_receipt], outputs=[],
+            js="(file, token) => { if (!file?.url || !token) return []; "
+               "const key = '__mineruBatchDownloadToken'; if (window[key] === token) return []; "
+               "window[key] = token; const a=document.createElement('a'); a.href=file.url; "
+               "a.download=file.orig_name||'results.zip'; document.body.appendChild(a); a.click(); a.remove(); return []; }",
+            queue=False, api_visibility="private",
+        )
+
+        def refresh_history() -> Any:
+            return gr.update(choices=batches.choices())
+
+        history_refresh.click(fn=refresh_history, inputs=[], outputs=history_choices,
+                              queue=False, api_visibility="private")
+        demo.load(fn=refresh_history, inputs=[], outputs=history_choices,
+                  queue=False, api_visibility="private")
+
+        def clear_history(request: object | None = None) -> tuple[Any, str]:
+            session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return gr.skip(), "正在运行，不能清除历史"
+            try:
+                batches.clear_history(set(selected_jobs.values()))
+            except ValueError as error:
+                return gr.skip(), str(error)
+            return gr.update(choices=[], value=None), "已清除运行期历史索引（不删除结果文件）"
+
+        clear_history.__annotations__["request"] = gr.Request
+        history_clear.click(fn=clear_history, inputs=[], outputs=[history_choices, history_notice],
+                            queue=False, api_visibility="private")
+
+        def restore_history(job_id: str, request: object | None = None) -> tuple[str, str, Any]:
+            session = getattr(request, "session_hash", "") or ""
+            if batches.busy(session):
+                return "", "正在运行，无法恢复", gr.skip()
+            job = batches.jobs.get(job_id)
+            if job is None or job.running or job.receipt_outputs is None:
+                return "", "历史记录不存在或尚未完成", gr.skip()
+            selected_jobs[session] = job.job_id
+            restored = conversions.start(session, uuid.uuid4().hex)
+            assert restored is not None
+            restored.artifacts = job.current_artifacts
+            restored.publish(STATUS_COMPLETED)
+            return json.dumps({
+                "run_id": restored.run_id, "sequence": restored.state.sequence,
+                "ready_at": time.time(), "outputs": job.receipt_outputs,
+                "restored": True, "batch_count": len(job.files), "batch_status": batch_summary(job),
+                "can_host": bool(job.successful) and image_host_configured(),
+                "hosted": bool(job.hosted_path and Path(job.hosted_path).is_file()),
+                "history_choices": batches.choices(),
+                "restore_source": (str(RunArtifacts.from_state(job.current_artifacts).source_path)
+                                   if job.current_artifacts else ""),
+            }, ensure_ascii=False), "已恢复历史结果，无需重新解析", gr.update(interactive=bool(job.successful))
+
+        restore_history.__annotations__["request"] = gr.Request
+        history_restore.click(fn=restore_history, inputs=history_choices,
+                              outputs=[conversion_receipt, history_notice, batch_zip_button],
+                              queue=False, api_visibility="private")
 
         def session_download_handler(format_name: str) -> Callable[..., tuple[Any, str]]:
             """下载时读取当前会话的素材路径，公开 API 的 State 仍可单独使用。"""
@@ -1218,6 +1452,8 @@ def build_gradio_app(
 
             session = getattr(request, "session_hash", "") or ""
             run = conversions.runs.get(session)
+            job = batches.jobs.get(selected_jobs.get(session, ""))
+            acquired = False
             try:
                 if run is None or run.cancelled or run.artifacts is None:
                     raise ValueError("No current conversion result")
@@ -1228,17 +1464,41 @@ def build_gradio_app(
                 # internal ConversionRun.run_id ticket used by the UI.
                 if not expected_run_id or expected_run_id != artifacts.root.name:
                     raise ValueError("Conversion result changed")
+                if job is None or job.running or not job.successful:
+                    raise ValueError("No completed conversion result")
+                batches.acquire(session, job.job_id)
+                acquired = True
                 report: queue.Queue[tuple[str, object, int]] = queue.Queue()
                 def notify(done: int, total: int) -> None:
                     report.put(("progress", done, total))
                 def worker() -> None:
                     try:
-                        path = generate_image_host_markdown(artifacts, allowed_root=output_root, progress=notify)
+                        finished = job.successful
+                        job.hosted_errors.clear()
+                        for position, current in enumerate(finished, 1):
+                            notify(position - 1, len(finished))
+                            try:
+                                generate_image_host_markdown(current, allowed_root=output_root)
+                            except Exception as error:
+                                job.hosted_errors.append(f"{current.stem}: {error}")
+                        if len(job.files) == 1:
+                            path = finished[0].downloads_dir / f"{finished[0].stem}.md"
+                            if not path.is_file():
+                                raise ValueError("Image hosting failed: " + "; ".join(job.hosted_errors))
+                        else:
+                            if not any((current.downloads_dir / f"{current.stem}.md").is_file() for current in finished):
+                                raise ValueError("All image-host exports failed")
+                            path = archive_job(job, output_root=output_root, hosted=True)
+                        job.hosted_path = str(path)
+                        notify(len(finished), len(finished))
                         report.put(("done", str(path), 0))
                     except Exception as exc:
                         report.put(("error", exc, 0))
                 threading.Thread(target=worker, daemon=True).start()
-                yield gr.update(value="上传中...", interactive=False), "<small>正在准备图片...</small>", gr.update(value=None, visible=False)
+                yield (gr.update(value="上传中...", interactive=False), "<small>正在准备图片...</small>",
+                       gr.update(value=None, visible=False), gr.update(interactive=False),
+                       gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False),
+                       gr.update(interactive=False), gr.update(value=""))
                 while True:
                     action, payload, total = report.get()
                     if conversions.runs.get(session) is not run or run.cancelled:
@@ -1246,20 +1506,37 @@ def build_gradio_app(
                     if action == "progress":
                         done = int(payload)
                         pct = (done / total * 100) if total else 100
-                        status = (f'<div style="height:5px;background:var(--border-color-primary,#555);border-radius:4px;overflow:hidden">'
-                                  f'<div style="height:100%;width:{pct:.1f}%;background:#ea580c"></div></div>'
-                                  f'<small>上传中 {done}/{total}</small>')
-                        yield gr.update(value=f"上传中 {done}/{total}", interactive=False), status, gr.update()
+                        status = (
+                            '<div style="height:5px;background:var(--border-color-primary,#555);'
+                            'border-radius:4px;overflow:hidden">'
+                            f'<div style="height:100%;width:{pct:.1f}%;background:#ea580c"></div></div>'
+                            f'<small>上传中 {done}/{total}</small>'
+                        )
+                        yield (gr.update(value=f"上传中 {done}/{total}", interactive=False), status, gr.update(),
+                               gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip())
                     elif action == "done":
                         if conversions.runs.get(session) is not run or run.cancelled:
                             return
-                        yield gr.update(value="下载图床版 MD", interactive=True), "<small>已完成，点击可再次下载</small>", gr.update(value=str(payload), visible=False)
+                        yield (
+                            gr.update(value="下载图床版 MD", interactive=True),
+                            "<small>已完成，点击可再次下载</small>",
+                            gr.update(value=str(payload), visible=False),
+                            *(gr.update(interactive=True) for _ in range(5)),
+                            gr.update(value=uuid.uuid4().hex),
+                        )
                         return
                     else:
                         raise payload
             except Exception as exc:
                 logger.warning("EasyImages export failed: {}", type(exc).__name__)
-                yield gr.update(value="重试上传", interactive=True), f"<small>上传失败：{html.escape(str(exc))}</small>", gr.update(value=None, visible=False)
+                yield (gr.update(value="重试上传", interactive=True),
+                       f"<small>上传失败：{html.escape(str(exc))}</small>", gr.update(value=None, visible=False),
+                       gr.update(interactive=True), gr.update(interactive=True),
+                       gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True),
+                       gr.update(value=""))
+            finally:
+                if acquired and job is not None:
+                    batches.end(session, job.job_id)
 
         image_host_safe_handler.__annotations__["request"] = gr.Request
         active_run_id.change(
@@ -1268,28 +1545,33 @@ def build_gradio_app(
         )
         gr.on(
             triggers=[input_file.change, clear_button.click, convert_button.click],
-            fn=lambda: (gr.update(value="生成图床版 MD", interactive=False), f'<small>{localized_text("image_host_waiting")}</small>', gr.update(value=None, visible=False)),
+            fn=lambda: (
+                gr.update(value="生成图床版 MD", interactive=False),
+                f'<small>{localized_text("image_host_waiting")}</small>',
+                gr.update(value=None, visible=False),
+            ),
             inputs=[], outputs=[image_host_button, image_host_status, image_host_file], queue=False, api_visibility="private",
         )
-        image_host_button.click(
+        host_event = image_host_button.click(
             fn=image_host_safe_handler, inputs=[active_run_id],
-            outputs=[image_host_button, image_host_status, image_host_file],
+            outputs=[image_host_button, image_host_status, image_host_file,
+                     clear_button, batch_upload, convert_button, history_restore, history_clear,
+                     image_host_download_token],
             queue=True, concurrency_limit=1, concurrency_id="mineru-image-host",
             show_progress="hidden", api_visibility="private",
         )
-        image_host_file.change(
-            fn=None, inputs=image_host_file, outputs=[],
-            # Debounce duplicate file-change notifications without preventing future manual downloads.
+        host_event.success(
+            fn=None, inputs=[image_host_file, image_host_download_token], outputs=[],
+            # One completion receipt per user click. Repeated File updates within
+            # the same operation cannot launch multiple browser downloads.
             js=(
-                "(file) => { "
-                "if (!file?.url) return []; "
-                "const key = file.url; const now = Date.now(); "
-                "const last = window.__mineruImageHostDownload; "
-                "if (last?.key === key && now - last.at < 2000) return []; "
-                "window.__mineruImageHostDownload = {key, at: now}; "
-                "const a = document.createElement('a'); a.href = key; "
-                "a.download = file.orig_name || 'markdown.md'; "
-                "document.body.appendChild(a); a.click(); a.remove(); return []; }"
+                "(file, token) => { "
+                "if (!file?.url || !token) return []; "
+                "if (window.__mineruHostDownloadToken === token) return []; "
+                "window.__mineruHostDownloadToken = token; "
+                "const a=document.createElement('a'); a.href=file.url; "
+                "a.download=file.orig_name||'markdown.md'; document.body.appendChild(a); "
+                "a.click(); a.remove(); return []; }"
             ),
             queue=False, api_visibility="private",
         )

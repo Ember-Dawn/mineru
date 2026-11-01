@@ -53,3 +53,9 @@ Fork 曾以 `mineru-4.0.12-released` 作为起点；之后是否仍对应此版�
 - `reuse_ready=True` 不自动检查远端权重是否更新；修改模型注册表、权重版本或下载策略时，要明确验证和刷新旧模型。
 - WebUI 默认挂载 `./mineru` 并使用 `PYTHONPATH`；只修改 WebUI 源码可重启 WebUI。Router/Worker 源码仍位于镜像内。
 - 依赖、Dockerfile、模型、资源安装方式改变时，重建镜像并重新创建受影响的容器；更新 `.env`、Compose 配置需 `up -d`，不是 `restart`。
+
+## Gradio 批量与历史回归
+
+上游升级 Gradio 或改变 `File(file_count="multiple")`、`gr.Request` 自动注入、`gr.File` 的 `FileData` 事件、`.success()`、`gr.on` / 清除按钮行为时，应重点重测多文件输入适配、批次锁、旧转换回执、隐藏文件下载及刷新后恢复。
+
+不得仅因页面有完整结果就推断会话状态已恢复；必须检查服务端历史索引和当前批次身份是否一致。上游若改变解析返回结构或 `RunArtifacts` 路径，复审 ZIP 与图床处理。

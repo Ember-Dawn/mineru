@@ -56,3 +56,11 @@ WebUI 并不是额外的模型推理服务；`--api-url` 将请求发送给 Rout
 ## Optional EasyImages post-processing
 
 The Gradio WebUI alone reads the materialized `markdown.md` and `images/` of the current run, uploads referenced images to the configured EasyImages HTTP endpoint, and writes a separate downloadable `.md` under `downloads/`. Router and Worker do not receive the token and inference/model code is untouched.
+
+## Gradio 批次处理与历史恢复
+
+前端一个多选上传组件，原单选文件组件留作隐藏预览适配器。`app.py` 为整个批次分配一个转换 ticket，`batch.py` 记录 `BatchJob`/`BatchItem` 的逐项状态及结果 `RunArtifacts`，并以现有 `SessionConversions.slot` 保证解析串行。
+
+一个批次内不能重复调用 `SessionConversions.start()`，否则会取消同一会话的前一份文件；批次子解析复用 `execute_conversion()`，但使用独立临时 `ConversionRun` 记录解析状态；批次本身负责进度和最终回执。
+
+完成后提供 ZIP 下载和 EasyImages 图床版导出。历史恢复由进程内任务索引重绑定**新**的浏览器 ticket，旧 ticket 和旧下载回执不复用。上传组件的历史路径不需要重新提交，预览及下载引用已保存在任务目录的文件。

@@ -148,3 +148,13 @@ PDF 和图片会生成与解析范围一致的 `origin.pdf`；布局预览使用
 ## EasyImages2.0 standalone Markdown (Fork)
 
 The left column has an optional image-hosting card below conversion status. Configure `EASYIMAGES_API_URL` (HTTPS site root, without `/api/index.php`) and `EASYIMAGES_TOKEN` in the WebUI container. After conversion, select “生成图床版 MD” to upload Markdown-referenced local images and download a standalone `.md` file. Original archives are not rewritten. Per-run upload URLs are cached under `downloads/easyimages_upload_state.json`; transient failures may be retried. Image uploads are serial with a shared 0.6-second minimum request-start interval and no minute quota.
+
+## 批量 PDF 队列与图床后处理（Fork 定制）
+
+一次可选择一个或多个 PDF。单个 PDF 保持旧的转换、预览、七种格式下载以及页码范围功能；多个 PDF 时，按钮变为「批量转换」，依次解析每份 PDF（全页解析，每份独立遵守页数上限），批次状态显示完成与失败情况。某份 PDF 失败不阻断后续文件。
+
+解析结束后，左侧「下载 ZIP」可下载：单文件为既有 Markdown + images ZIP；多文件按 PDF 文件夹分别打包 Markdown/图片，遇到失败附 `处理报告.txt`。
+
+「生成图床版 MD」是**解析完成后的手动后处理**：单文件生成并下载独立 MD，多文件按文档顺序串行上传图片并提供一份 ZIP（仅包含成功生成的图床版 MD，失败说明见报告），复用 EasyImages 已成功上传图片缓存及现有限速。
+
+「历史记录」位于左侧，点击刷新历史、选择任务后可以恢复已经结束的解析结果、预览及下载能力，**不重新解析**。运行过程中禁止清除、重新选择文件或恢复历史。历史索引只保存在 WebUI 进程内，页面刷新后可找回已完成记录，但重启 WebUI 或重建容器后不保证历史存在。清除历史仅清除索引，不清理模型或原始输出。

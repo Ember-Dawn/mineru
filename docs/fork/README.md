@@ -33,3 +33,5 @@
 - Docker BuildKit 缓存不是备份或永久存储，首次切换缓存策略可能重新下载模型。
 
 本目录不保存机器私密信息、Token、SSH 密钥等。
+
+批量解析定制：WebUI 提供多 PDF 串行队列、统一 ZIP、批量图床后处理和进程内历史恢复；详见 `CUSTOMIZATIONS.md` 第 7 节及 `ARCHITECTURE.md`。不提供容器重启后的历史持久化。

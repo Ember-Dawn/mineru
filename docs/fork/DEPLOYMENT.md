@@ -82,3 +82,11 @@ BuildKit 缓存不是备份，不在宿主机项目源码目录下。
 Copy `.env.example` to `.env` and fill `EASYIMAGES_API_URL` (HTTPS site root such as `https://easyimages.380782744.xyz`) and `EASYIMAGES_TOKEN`. Compose passes these only to `mineru-webui`. The WebUI app appends `/api/index.php` automatically. Never commit `.env` or print the token.
 
 After a successful conversion use the image-hosting card below the conversion status; the original Markdown ZIP remains unchanged. Uploads are serial, spaced at least 0.6 seconds between start times. Verify real Cloudflare behavior and link accessibility in the deployed environment.
+
+## WebUI 批量解析与运行期历史验证
+
+不需要新增 Docker 服务、数据库或目录挂载。应用补丁后仅修改挂载的 WebUI Python/JS/CSS 资源，执行 `docker compose restart mineru-webui` 并强制刷新页面。
+
+用两份小 PDF 检查：多文件选择后按钮显示「批量转换」，按顺序完成并出现一份批量 ZIP；任务结束才可点击图床处理，生成图床版 MD ZIP；解析及图床过程中「清除」与上传不可操作。再刷新页面，通过「历史记录」恢复已完成结果，重新下载，无需再次解析。单 PDF 检查页码选择、旧格式菜单及独立图床 MD。
+
+运行期历史仅在当前 WebUI Python 进程存活期间提供；`docker compose restart`、`up --force-recreate` 或镜像重建后索引重置。磁盘上的原产物不会被「清除历史」删除，但不保证跨容器保留。

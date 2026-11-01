@@ -51,6 +51,14 @@
     }
     if (action === "result") {
         const receipt = parse(args[0]);
+        if (receipt?.restored && typeof receipt.run_id === "string" && state.runId !== receipt.run_id) {
+            stopPreviewLog();
+            state.runId = receipt.run_id;
+            state.sequence = 0;
+            state.terminal = false;
+            state.applied = false;
+            state.revision += 1;
+        }
         // 返回 15 个可见/文件输出和 Timer；服务端的 artifact State 不经过浏览器写入。
         if (!receipt || !state.runId || receipt.run_id !== state.runId || state.applied
             || !Array.isArray(receipt.outputs) || receipt.outputs.length !== 15

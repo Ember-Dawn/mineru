@@ -1,4 +1,4 @@
-(tiers, flashOnlyExtensions, maxPages, file, position, metadata, previous, handleAValue, handleBValue, tierSelection) => {
+(tiers, flashOnlyExtensions, maxPages, file, position, metadata, previous, handleAValue, handleBValue, tierSelection, batchCount = 1) => {
     // 纯前端状态转换：经原生组件事件读写值，不逐次向 Python 发送拖动请求。
     // 内部元数据使用 JSON 文本，避免不同 Gradio 版本的 JSON 组件封装差异。
     const { text, message } = window.__mineruI18n;
@@ -21,7 +21,8 @@
     const selectedTier = flashOnly ? "flash" : tiers[effectivePosition];
     tierSelection.locked = flashOnly;
     const isPdf = path.toLowerCase().endsWith(".pdf");
-    const needsRange = isPdf;
+    const isBatch = Number(batchCount) > 1;
+    const needsRange = isPdf && !isBatch;
     const fileChanged = previous?.path !== path;
     const state = !fileChanged ? { ...previous } : {
         path, page_count: 0, handle_a: 1, handle_b: 1, start_handle: "a", error: "",
@@ -76,14 +77,15 @@
         + `<div class="mineru-page-axis"><span>1</span><span>${limitText}</span><span>${count || "–"}</span></div>`;
     const notice = flashUnavailable ? text("flash_unavailable")
         : needsRange && !count ? message(state.error) : "";
-    const range = count ? (start === end ? String(start) : `${start}-${end}`) : "";
+    const range = needsRange && count ? (start === end ? String(start) : `${start}-${end}`) : "";
     // 新版 Gradio 要求非零跨度；单页时禁用滑块，实际页数和提交范围仍为 1。
     const slider = (value, label) => update({ minimum: 1, maximum: Math.max(2, count), value, interactive, label });
     return [
         slider(state.handle_a, state.start_handle === "a" ? text("start_page") : text("end_page")),
         slider(state.handle_b, state.start_handle === "b" ? text("start_page") : text("end_page")),
         summary, range, JSON.stringify(state),
-        update({ interactive: Boolean(path) && !flashUnavailable && (!needsRange || count > 0) }),
+        update({ interactive: Boolean(path) && !flashUnavailable && (!needsRange || count > 0),
+                 value: isBatch ? text("batch_convert") : text("convert") }),
         update({ value: escapeHtml(notice), visible: Boolean(notice) }),
         // 同一事件同时更新值、标签和页码，程序赋值无需再触发 tier.input。
         update({ value: effectivePosition, interactive: !flashOnly && tiers.length > 1 }),
