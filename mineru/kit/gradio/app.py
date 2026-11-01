@@ -1212,7 +1212,7 @@ def build_gradio_app(
             return handler
 
         # Run uploads outside the parse slot and stream compact progress through a queue.
-        def image_host_safe_handler(state: object, request: object | None = None):
+        def image_host_safe_handler(expected_run_id: str, request: object | None = None):
             import queue
             import threading
 
@@ -1221,9 +1221,12 @@ def build_gradio_app(
             try:
                 if run is None or run.cancelled or run.artifacts is None:
                     raise ValueError("No current conversion result")
+                # The UI conversion flow keeps artifacts in the server-side run.
+                # Its browser receipt does not populate artifact_state.
                 artifacts = RunArtifacts.from_state(run.artifacts)
-                supplied = RunArtifacts.from_state(state)
-                if supplied.root != artifacts.root:
+                # active_run_id is the artifact directory name, not the
+                # internal ConversionRun.run_id ticket used by the UI.
+                if not expected_run_id or expected_run_id != artifacts.root.name:
                     raise ValueError("Conversion result changed")
                 report: queue.Queue[tuple[str, object, int]] = queue.Queue()
                 def notify(done: int, total: int) -> None:
@@ -1269,7 +1272,7 @@ def build_gradio_app(
             inputs=[], outputs=[image_host_button, image_host_status, image_host_file], queue=False, api_visibility="private",
         )
         image_host_button.click(
-            fn=image_host_safe_handler, inputs=[artifact_state],
+            fn=image_host_safe_handler, inputs=[active_run_id],
             outputs=[image_host_button, image_host_status, image_host_file],
             queue=True, concurrency_limit=1, concurrency_id="mineru-image-host",
             show_progress="hidden", api_visibility="private",

@@ -9,3 +9,9 @@ EasyImages 图床导出在 Gradio 左侧解析状态卡片下方，以独立紧�
 - 轻量验证：已检查源码 Git blob SHA、Python AST 与 ZIP CRC；暗色/亮色浏览器外观及真实上传仍需在部署后人工检查。
 
 日常修改上述挂载源码或样式后，重启 `mineru-webui` 并刷新浏览器即可；不需重建镜像。
+
+## 图床按钮回归修复
+
+- 当前 WebUI 转换流程保存解析结果于服务端 `ConversionRun.artifacts`，并未填充供图床回调读取的 `artifact_state`。图床回调改用 `active_run_id` 及服务端当前 run 校验，解决转换成功后错误提示 `No parsed document is available`。
+- 恢复被上轮 CSS 插入误伤的 `.block.mineru-status-panel .status-steps-panel` 规则；限定图床启用按钮橙色背景、白色文字。
+- 已完成 Python AST、Git SHA 及 ZIP 完整性轻量检查；真实图床上传和 Gradio 浏览器联动仍需服务器验证。
