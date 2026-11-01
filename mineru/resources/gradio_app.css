@@ -511,7 +511,7 @@ button.mineru-batch-zip-button:not(:disabled):hover, .mineru-batch-zip-button bu
 button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disabled { background:#52525b !important; border-color:#52525b !important; color:#fff !important; opacity:1 !important; }
 .mineru-combined-status { border:1px solid var(--mineru-panel-border) !important; border-radius:8px !important; background:var(--mineru-status-panel-bg) !important; padding:0 !important; gap:0 !important; overflow:hidden; }
 .mineru-combined-status .status-steps-panel { border:0 !important; border-radius:0 !important; background:transparent !important; }
-.mineru-combined-status .mineru-batch-status { padding:0 14px 12px !important; border:0 !important; background:transparent !important; }
+.mineru-combined-status .mineru-batch-status { border:0 !important; background:transparent !important; }
 .mineru-batch-progress-track { width:100%; height:7px; background:#52525b; border-radius:6px; overflow:hidden; }
 .mineru-batch-progress-fill { height:100%; background:#ea580c; border-radius:6px; }
 .mineru-batch-error { margin-top:6px !important; overflow-wrap:anywhere; }
@@ -538,3 +538,64 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 /* Keep the ZIP button compact in height but full-width inside status. */
 .mineru-combined-status .mineru-batch-zip-row { width:100% !important; justify-content:stretch !important; padding:2px 12px 12px !important; margin:0 !important; min-height:0 !important; background:transparent !important; border:0 !important; }
 .mineru-combined-status .mineru-batch-zip-button { width:100% !important; flex:1 1 auto !important; min-width:0 !important; min-height:32px !important; height:34px !important; padding:4px 12px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }
+
+
+/* Compact status card: native Gradio HTML blocks must not stretch vertically. */
+.mineru-combined-status {
+    gap: 0 !important;
+    justify-content: flex-start !important;
+    align-items: stretch !important;
+}
+.mineru-combined-status > .mineru-status-panel,
+.mineru-combined-status > .mineru-batch-status {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+}
+.mineru-combined-status .mineru-status-panel .html-container,
+.mineru-combined-status .mineru-batch-status .html-container {
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+.mineru-combined-status .status-steps-panel {
+    padding: 8px 12px 2px !important;
+}
+.mineru-combined-status .mineru-batch-status {
+    padding: 0 12px 4px !important;
+}
+.mineru-combined-status .mineru-batch-zip-row {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    padding: 4px 12px 10px !important;
+    margin: 0 !important;
+}
+
+/* Single history card: dropdown and both actions share the same border. */
+.mineru-history-card {
+    width: 100% !important;
+    flex: 0 0 auto !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+    border: 1px solid var(--mineru-panel-border) !important;
+    border-radius: 8px !important;
+    background: var(--mineru-status-panel-bg) !important;
+}
+.mineru-history-card .mineru-history-select {
+    width: 100% !important;
+    margin: 0 !important;
+    flex: 0 0 auto !important;
+}
+.mineru-history-card .mineru-history-buttons {
+    width: 100% !important;
+    margin: 0 !important;
+    flex: 0 0 auto !important;
+}
+.mineru-history-card .mineru-history-notice:empty {
+    display: none !important;
+}
+.mineru-control-column {
+    padding-bottom: 6px !important;
+}

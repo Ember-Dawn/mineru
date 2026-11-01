@@ -526,12 +526,13 @@ def build_gradio_app(
                     )
                     image_host_file = gr.File(visible=False, interactive=False, show_label=False)
                     image_host_download_token = gr.Textbox(value="", visible=False)
-                history_choices = gr.Dropdown(choices=[], label=i18n("mineru.history_title"), interactive=True,
-                                              elem_classes=["mineru-history-select"])
-                with gr.Row(elem_classes=["mineru-history-buttons"]):
-                    history_restore = gr.Button(i18n("mineru.history_restore"), size="sm")
-                    history_clear = gr.Button(i18n("mineru.history_clear"), size="sm")
-                history_notice = gr.Markdown("", elem_classes=["mineru-history-notice"])
+                with gr.Column(elem_classes=["mineru-history-card"]):
+                    history_choices = gr.Dropdown(choices=[], label=i18n("mineru.history_title"), interactive=True,
+                                                  elem_classes=["mineru-history-select"])
+                    with gr.Row(elem_classes=["mineru-history-buttons"]):
+                        history_restore = gr.Button(i18n("mineru.history_restore"), size="sm")
+                        history_clear = gr.Button(i18n("mineru.history_clear"), size="sm")
+                    history_notice = gr.Markdown("", elem_classes=["mineru-history-notice"])
 
                 if examples:
                     gr.Examples(
