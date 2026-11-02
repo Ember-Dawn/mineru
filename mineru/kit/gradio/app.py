@@ -438,8 +438,8 @@ def build_gradio_app(
                 # Browser uploads one file per HTTP POST; Gradio File is now only
                 # an internal list-valued component for the existing parsing chain.
                 upload_list = gr.HTML(
-                    value=_sequential_upload_markup([], file_types),
-                    html_template="${value}",
+                    value={"html": _sequential_upload_markup([], file_types)},
+                    html_template="${value.html}",
                     js_on_load=_resource_text("gradio_sequential_upload.js"),
                     elem_classes=["mineru-sequential-upload"], apply_default_css=False,
                 )
@@ -752,15 +752,15 @@ def build_gradio_app(
             return (gr.update(value=list(paths)), gr.update(value=first),
                     gr.update(value=label, interactive=bool(paths)),
                     gr.update(value=""), gr.update(interactive=False), "", str(len(paths)),
-                    _sequential_upload_markup(paths, file_types))
+                    {"html": _sequential_upload_markup(paths, file_types)})
 
-        def sync_uploaded_files(event: gr.EventData, request: object | None = None) -> tuple[Any, ...]:
+        def sync_uploaded_files(data: dict[str, Any], request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
                 return tuple(gr.skip() for _ in range(8))
             selected_jobs.pop(session, None)
             try:
-                files = event._data.get("paths") if isinstance(event._data, dict) else None
+                files = data.get("paths") if isinstance(data, dict) else None
                 if not isinstance(files, list) or not all(isinstance(p, str) for p in files):
                     raise ValueError("Invalid upload result")
             except (ValueError, TypeError) as exc:
@@ -786,12 +786,12 @@ def build_gradio_app(
                     fingerprints.add(signature)
             return _sync_pending_view(session)
 
-        def sync_deleted_file(event: gr.EventData, request: object | None = None) -> tuple[Any, ...]:
+        def sync_deleted_file(data: dict[str, Any], request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
                 return tuple(gr.skip() for _ in range(8))
             try:
-                position = int(event._data.get("index", -1))
+                position = int(data.get("index", -1)) if isinstance(data, dict) else -1
             except (TypeError, ValueError):
                 return tuple(gr.skip() for _ in range(8))
             paths = pending_uploads.get(session, [])
@@ -813,11 +813,11 @@ def build_gradio_app(
         upload_outputs = [batch_upload, input_file, convert_button, batch_status,
                           batch_zip_button, active_run_id, batch_count, upload_list]
         upload_list.submit(
-            fn=sync_uploaded_files, inputs=[], outputs=upload_outputs,
+            fn=sync_uploaded_files, inputs=[upload_list], outputs=upload_outputs,
             queue=False, api_visibility="private",
         )
         upload_list.edit(
-            fn=sync_deleted_file, inputs=[], outputs=upload_outputs,
+            fn=sync_deleted_file, inputs=[upload_list], outputs=upload_outputs,
             queue=False, api_visibility="private",
         )
 

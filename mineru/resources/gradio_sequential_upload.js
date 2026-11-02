@@ -29,7 +29,7 @@ const enqueue = async (files) => {
         active = false;
     }
     setStatus(`已上传 ${paths.length}/${selected.length} 个文件`);
-    if (paths.length) trigger('submit', {paths});
+    if (paths.length) { props.value = {html: root.innerHTML, paths}; trigger('submit'); }
     if (failures.length) alert('以下文件上传失败：\n' + failures.slice(0, 8).join('\n'));
 };
 root.addEventListener('change', (event) => {
@@ -53,5 +53,6 @@ root.addEventListener('click', (event) => {
     const button = event.target.closest?.('.mineru-sequential-remove');
     if (!button || active || window.__mineruSequentialUploaderLocked) return;
     event.preventDefault();
-    trigger('edit', {index: Number(button.dataset.index)});
+    props.value = {html: root.innerHTML, index: Number(button.dataset.index)};
+    trigger('edit');
 });
