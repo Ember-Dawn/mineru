@@ -722,17 +722,17 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 .mineru-upload-file .file button[aria-label*="移除"] svg,
 .mineru-upload-file .file button[aria-label*="删除"] svg {width:17px !important;height:17px !important;}
 .mineru-combined-status .mineru-batch-zip-row {
-    justify-content:flex-end !important; padding-top:12px !important;
+    justify-content:flex-end !important; padding-top:12px !important; padding-bottom:16px !important;
 }
 
 /* Sequential browser upload: one Gradio upload(file) per request. */
 .mineru-sequential-upload { width: 100% !important; padding: 0 !important; }
 .mineru-sequential-upload .html-container { padding: 0 !important; }
 .mineru-sequential-dropzone {
-    position: relative; overflow: hidden; min-height: 115px;
+    position: relative; overflow: hidden; min-height: 96px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 8px; border: 1px dashed var(--mineru-panel-border); border-radius: 8px;
-    background: var(--mineru-status-panel-bg); padding: 12px;
+    gap: 5px; border: 1px dashed var(--mineru-panel-border); border-radius: 8px;
+    background: var(--mineru-status-panel-bg); padding: 10px 12px;
 }
 .mineru-sequential-caption { font-weight: 700; font-size: 13px; }
 .mineru-sequential-hint { font-size: 13px; color: var(--body-text-color-subdued); }
@@ -741,10 +741,10 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
     position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0;
     cursor: pointer; z-index: 1;
 }
-.mineru-sequential-file-list { display: flex; flex-direction: column; gap: 2px; }
+.mineru-sequential-file-list { display: flex; flex-direction: column; gap: 0; }
 .mineru-sequential-file {
-    display: flex; align-items: center; gap: 8px; min-height: 39px;
-    padding: 4px 6px; min-width: 0;
+    display: flex; align-items: center; gap: 6px; min-height: 34px;
+    padding: 1px 6px; min-width: 0;
 }
 .mineru-sequential-file > span {
     flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -756,3 +756,10 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
     border-radius: 5px; cursor: pointer;
 }
 .mineru-sequential-remove:hover { background: var(--mineru-panel); }
+
+/* Slight right alignment of the history dropdown chevron. */
+.mineru-history-select .wrap > svg:last-child,
+.mineru-history-select .secondary-wrap > svg:last-child,
+.mineru-history-select .wrap button svg:last-child {
+    transform: translateX(6px);
+}
