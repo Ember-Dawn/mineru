@@ -729,13 +729,13 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 .mineru-sequential-upload { width: 100% !important; padding: 0 !important; }
 .mineru-sequential-upload .html-container { padding: 0 !important; }
 .mineru-sequential-dropzone {
-    position: relative; overflow: hidden; min-height: 96px;
+    position: relative; overflow: hidden; min-height: 54px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 5px; border: 1px dashed var(--mineru-panel-border); border-radius: 8px;
-    background: var(--mineru-status-panel-bg); padding: 10px 12px;
+    gap: 2px; border: 1px dashed var(--mineru-panel-border); border-radius: 8px;
+    background: var(--mineru-status-panel-bg); padding: 5px 10px;
 }
-.mineru-sequential-caption { font-weight: 700; font-size: 13px; }
-.mineru-sequential-hint { font-size: 13px; color: var(--body-text-color-subdued); }
+.mineru-sequential-caption { font-weight: 700; font-size: 13px; line-height: 1.25; }
+.mineru-sequential-hint { font-size: 13px; line-height: 1.25; color: var(--body-text-color-subdued); }
 .mineru-sequential-progress { font-size: 12px; color: var(--body-text-color-subdued); }
 .mineru-sequential-input {
     position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0;
