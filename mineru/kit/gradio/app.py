@@ -363,6 +363,29 @@ def _download_updates(gr: Any, *, interactive: bool, run_id: str = "") -> tuple[
     return (run_id, *(gr.update(value=label, interactive=interactive) for _format_name, label in _DOWNLOAD_FORMATS))
 
 
+def _sequential_upload_markup(paths: list[str], file_types: list[str]) -> str:
+    """Upload dropzone and queued-file list; text always HTML-escaped."""
+    accept = html.escape(",".join(file_types), quote=True)
+    rows = []
+    for index, value in enumerate(paths):
+        name = html.escape(Path(value).name, quote=True)
+        rows.append(
+            f'<div class="mineru-sequential-file"><span title="{name}">{name}</span>'
+            f'<button type="button" class="mineru-sequential-remove" data-index="{index}" '
+            f'aria-label="Remove {name}">×</button></div>'
+        )
+    return (
+        '<div class="mineru-sequential-dropzone" role="group" aria-label="上传 PDF 文件">'
+        '<div class="mineru-sequential-caption">选择要解析的文件</div>'
+        f'<input class="mineru-sequential-input" type="file" multiple accept="{accept}" '
+        'aria-label="选择要解析的文件">'
+        '<div class="mineru-sequential-hint">拖拽文件到此处，或点击添加文件</div>'
+        '<div class="mineru-sequential-progress" role="status" aria-live="polite"></div>'
+        '</div><div class="mineru-sequential-file-list">'
+        + "".join(rows) + '</div>'
+    )
+
+
 def build_gradio_app(
     client: V1ArtifactClient | GradioArtifactClient,
     capabilities: V1ServerCapabilities,
@@ -412,12 +435,18 @@ def build_gradio_app(
             with gr.Column(scale=2, min_width=280, elem_classes=["mineru-kit-control", "mineru-control-column"]):
                 batch_count_marker = gr.HTML(value='<span class="mineru-batch-count-marker" data-batch="false"></span>',
                                              elem_classes=["mineru-batch-marker"], apply_default_css=False)
+                # Browser uploads one file per HTTP POST; Gradio File is now only
+                # an internal list-valued component for the existing parsing chain.
+                upload_list = gr.HTML(
+                    value=_sequential_upload_markup([], file_types),
+                    html_template="${value}",
+                    js_on_load=_resource_text("gradio_sequential_upload.js"),
+                    elem_classes=["mineru-sequential-upload"], apply_default_css=False,
+                )
                 batch_upload = gr.File(
-                    label=i18n("mineru.upload"),
-                    file_types=file_types,
-                    file_count="multiple",
-                    type="filepath",
-                    elem_classes=["mineru-upload-file"],
+                    label=i18n("mineru.upload"), file_types=file_types,
+                    file_count="multiple", type="filepath", visible=False,
+                    interactive=False, elem_classes=["mineru-upload-file"],
                 )
                 # The original single-file preview chain stays isolated from list-valued uploads.
                 input_file = gr.File(
@@ -722,25 +751,34 @@ def build_gradio_app(
 
             return (gr.update(value=list(paths)), gr.update(value=first),
                     gr.update(value=label, interactive=bool(paths)),
-                    gr.update(value=""), gr.update(interactive=False), "", str(len(paths)))
+                    gr.update(value=""), gr.update(interactive=False), "", str(len(paths)),
+                    _sequential_upload_markup(paths, file_types))
 
-        def sync_uploaded_files(files: list[str] | None, request: object | None = None) -> tuple[Any, ...]:
+        def sync_uploaded_files(event: gr.EventData, request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
-                return tuple(gr.skip() for _ in range(7))
+                return tuple(gr.skip() for _ in range(8))
             selected_jobs.pop(session, None)
+            try:
+                files = event._data.get("paths") if isinstance(event._data, dict) else None
+                if not isinstance(files, list) or not all(isinstance(p, str) for p in files):
+                    raise ValueError("Invalid upload result")
+            except (ValueError, TypeError) as exc:
+                raise gr.Error("上传结果无效") from exc
             merged = pending_uploads.setdefault(session, [])
-            # Gradio's File.upload reports the currently selected files; it may
-            # replace the visible list on a second selection. The server's
-            # accumulated list is the source of truth, not File.change.
             fingerprints: set[tuple[str, int, str]] = set()
             for name in merged:
                 path = Path(name)
                 if path.is_file():
                     fingerprints.add((path.name, path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest()))
-            for name in files or []:
-                path = Path(name)
-                if not path.is_file():
+            for name in files:
+                path = Path(name).resolve()
+                # Only accept paths returned from Gradio's upload cache, not
+                # arbitrary local files supplied through a forged event.
+                from gradio.utils import get_upload_folder
+                if (not path.is_relative_to(Path(get_upload_folder()).resolve())
+                        or not path.is_file()
+                        or path.suffix.lower() not in {"." + e for e in PARSEABLE_EXTENSIONS}):
                     continue
                 signature = (path.name, path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest())
                 if signature not in fingerprints:
@@ -748,41 +786,45 @@ def build_gradio_app(
                     fingerprints.add(signature)
             return _sync_pending_view(session)
 
-        def sync_deleted_file(event: gr.DeletedFileData, request: object | None = None) -> tuple[Any, ...]:
+        def sync_deleted_file(event: gr.EventData, request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
-                return tuple(gr.skip() for _ in range(7))
-            selected_jobs.pop(session, None)
-            deleted = str(event.file.path)
-            pending_uploads[session] = [path for path in pending_uploads.get(session, []) if path != deleted]
+                return tuple(gr.skip() for _ in range(8))
+            try:
+                position = int(event._data.get("index", -1))
+            except (TypeError, ValueError):
+                return tuple(gr.skip() for _ in range(8))
+            paths = pending_uploads.get(session, [])
+            if 0 <= position < len(paths):
+                paths.pop(position)
+                selected_jobs.pop(session, None)
             return _sync_pending_view(session)
 
         def sync_cleared_files(request: object | None = None) -> tuple[Any, ...]:
             session = getattr(request, "session_hash", "") or ""
             if batches.busy(session):
-                return tuple(gr.skip() for _ in range(7))
+                return tuple(gr.skip() for _ in range(8))
             pending_uploads.pop(session, None)
             selected_jobs.pop(session, None)
             return _sync_pending_view(session)
 
         for callback in (sync_uploaded_files, sync_deleted_file, sync_cleared_files):
             callback.__annotations__["request"] = gr.Request
-        sync_deleted_file.__annotations__["event"] = gr.DeletedFileData
         upload_outputs = [batch_upload, input_file, convert_button, batch_status,
-                          batch_zip_button, active_run_id, batch_count]
-        batch_upload.upload(fn=sync_uploaded_files, inputs=batch_upload, outputs=upload_outputs,
-                            queue=False, api_visibility="private")
-        batch_upload.delete(fn=sync_deleted_file, inputs=[], outputs=upload_outputs,
-                            queue=False, api_visibility="private")
-        batch_upload.clear(fn=sync_cleared_files, inputs=[], outputs=upload_outputs,
-                           queue=False, api_visibility="private")
+                          batch_zip_button, active_run_id, batch_count, upload_list]
+        upload_list.submit(
+            fn=sync_uploaded_files, inputs=[], outputs=upload_outputs,
+            queue=False, api_visibility="private",
+        )
+        upload_list.edit(
+            fn=sync_deleted_file, inputs=[], outputs=upload_outputs,
+            queue=False, api_visibility="private",
+        )
 
-        def reset_pending_on_clear(request: object | None = None) -> None:
-            session = getattr(request, "session_hash", "") or ""
-            if not batches.busy(session):
-                pending_uploads.pop(session, None)
-        reset_pending_on_clear.__annotations__["request"] = gr.Request
-        clear_button.click(fn=reset_pending_on_clear, inputs=[], outputs=[], queue=False, api_visibility="private")
+        # Gradio ClearButton also resets its bound components; refresh the
+        # independent upload HTML to keep browser list and server queue in sync.
+        clear_button.click(fn=sync_cleared_files, inputs=[], outputs=upload_outputs,
+                           queue=False, api_visibility="private")
 
         # 换文件和清除先在浏览器中撤销旧预览，文件输出仍由原有 Python 事件管理。
         input_file.change(fn=None, inputs=input_file, outputs=pdf_viewer, js=pdf_preview_js("reset"), **private_event_kwargs)
@@ -1333,6 +1375,11 @@ def build_gradio_app(
             ),
             **private_event_kwargs,
         )
+        convert_button.click(
+            fn=None, inputs=[], outputs=[],
+            js="() => { window.__mineruSequentialUploaderLocked = true; return []; }",
+            queue=False, api_visibility="private",
+        )
         ui_convert_event = conversion_ticket.change(
             fn=convert_ui,
             inputs=[input_file, tier, page_range, force_ocr, conversion_ticket, batch_upload],
@@ -1384,6 +1431,7 @@ def build_gradio_app(
                 "(receipt, source, viewer) => { "
                 f"const values = ({conversion_js('result')})(receipt); "
                 "const data = JSON.parse(receipt || '{}'); "
+                "if (data.run_id) window.__mineruSequentialUploaderLocked = false; "
                 "if (data.restored && data.restore_source) { "
                 "const recovered = {path:data.restore_source, "
                 "url:window.location.origin+'/gradio_api/file='+encodeURI(data.restore_source)}; "
