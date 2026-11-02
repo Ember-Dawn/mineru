@@ -186,3 +186,16 @@ def test_owned_unicode_content_matches_reference(text: str) -> None:
         results.append((asdict(span), bool(pending)))
     assert _native.text_snapshot_stats()[2] == before + 1
     assert results[0] == results[1]
+
+def test_private_ranges_shape_for_native_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rust expects Vec<(u32, u32)>, not a two-integer tuple."""
+    class Owner:
+        args = None
+        def prepare_span_texts(self, *args):
+            self.args = args
+            return []
+
+    owner = Owner()
+    monkeypatch.setattr(native, "_owned_span_inputs", lambda *_: ([], 10.0, [], [], 0.5))
+    assert native._owned_span_texts(owner, [], 10.0, False) == []
+    assert owner.args[-2] == [(native.PRIVATE_USE_AREA_START, native.PRIVATE_USE_AREA_END)]
