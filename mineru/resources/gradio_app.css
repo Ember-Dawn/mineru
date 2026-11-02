@@ -502,8 +502,8 @@ body.dark .gradio-container {
 
 /* Compact full-width ZIP action with exact enabled/disabled colors. */
 .mineru-batch-zip-button { width: 100% !important; min-height: 34px !important; font-size:16px !important; font-weight:700 !important; color:#fff !important; }
-button.mineru-batch-zip-button:not(:disabled), .mineru-batch-zip-button button:not(:disabled) { background:#ea580c !important; border-color:#ea580c !important; color:#fff !important; }
-button.mineru-batch-zip-button:not(:disabled):hover, .mineru-batch-zip-button button:not(:disabled):hover { background:#c2410c !important; border-color:#c2410c !important; }
+button.mineru-batch-zip-button:not(:disabled), .mineru-batch-zip-button button:not(:disabled) { background:#166534 !important; border-color:#166534 !important; color:#fff !important; }
+button.mineru-batch-zip-button:not(:disabled):hover, .mineru-batch-zip-button button:not(:disabled):hover { background:#15803d !important; border-color:#15803d !important; }
 button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disabled { background:#52525b !important; border-color:#52525b !important; color:#fff !important; opacity:1 !important; }
 .mineru-combined-status { border:1px solid var(--mineru-panel-border) !important; border-radius:8px !important; background:var(--mineru-status-panel-bg) !important; padding:0 !important; gap:0 !important; overflow:hidden; }
 .mineru-combined-status .status-steps-panel { border:0 !important; border-radius:0 !important; background:transparent !important; }
@@ -533,7 +533,7 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
 .mineru-batch-marker .html-container { display:none !important; height:0 !important; min-height:0 !important; margin:0 !important; padding:0 !important; border:0 !important; }
 /* Keep the ZIP button compact in height but full-width inside status. */
 
-.mineru-combined-status .mineru-batch-zip-button { width:100% !important; flex:1 1 auto !important; min-width:0 !important; min-height:32px !important; height:34px !important; padding:4px 12px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }
+.mineru-combined-status .mineru-batch-zip-button { width:50% !important; flex:0 0 50% !important; max-width:50% !important; min-width:0 !important; min-height:32px !important; height:34px !important; padding:4px 12px !important; font-size:14px !important; line-height:1.2 !important; margin:0 !important; }
 
 
 /* Compact status card: native Gradio HTML blocks must not stretch vertically. */
@@ -693,4 +693,34 @@ button.mineru-batch-zip-button:disabled, .mineru-batch-zip-button button:disable
     height: 34px !important;
     padding: 4px 5px !important;
     white-space: nowrap !important;
+}
+
+/* Compact native PDF rows, keeping native controls. */
+.mineru-upload-file .file-list,
+.mineru-upload-file .file-preview,
+.mineru-upload-file .file-container { row-gap:0 !important; gap:0 !important; }
+.mineru-upload-file .file-list .file,
+.mineru-upload-file .file-preview .file,
+.mineru-upload-file .file-container .file {
+    min-height:40px !important; padding:3px 5px !important; gap:4px !important;
+    border-bottom:0 !important;
+}
+.mineru-upload-file .file .name,
+.mineru-upload-file .file .filename,
+.mineru-upload-file .file .file-name {
+    flex:1 1 auto !important; min-width:0 !important; max-width:none !important;
+    overflow:hidden !important; white-space:nowrap !important; text-overflow:ellipsis !important;
+}
+.mineru-upload-file .file .size,
+.mineru-upload-file .file .file-size { flex:0 0 auto !important; white-space:nowrap !important; }
+.mineru-upload-file .file button[aria-label*="Remove"],
+.mineru-upload-file .file button[aria-label*="Delete"],
+.mineru-upload-file .file button[aria-label*="移除"],
+.mineru-upload-file .file button[aria-label*="删除"] { min-width:28px !important; min-height:28px !important; padding:4px !important; }
+.mineru-upload-file .file button[aria-label*="Remove"] svg,
+.mineru-upload-file .file button[aria-label*="Delete"] svg,
+.mineru-upload-file .file button[aria-label*="移除"] svg,
+.mineru-upload-file .file button[aria-label*="删除"] svg {width:17px !important;height:17px !important;}
+.mineru-combined-status .mineru-batch-zip-row {
+    justify-content:flex-end !important; padding-top:12px !important;
 }
